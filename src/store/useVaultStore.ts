@@ -67,6 +67,8 @@ interface VaultStore {
   syncFromSupabase: () => Promise<boolean>;
 }
 
+const genId = () => crypto.randomUUID ? crypto.randomUUID() : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 export const useVaultStore = create<VaultStore>()(
   persist(
     (set, get) => ({
@@ -135,24 +137,24 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const { data, error } = await supabase.from('folders').insert([{
-          name,
-          color,
-          parent_id: parentId,
-          user_id: userId,
-        }]).select().single();
-
-        if (error) { console.error('createFolder error:', error); return; }
-
-        const newFolder: Folder = {
-          id: data.id,
-          name: data.name,
-          parentId: data.parent_id,
-          color: data.color,
-          createdAt: data.created_at,
-          updatedAt: data.updated_at
-        };
+        const localId = genId();
+        const now = new Date().toISOString();
+        const newFolder: Folder = { id: localId, name, parentId: parentId ?? null, color, createdAt: now, updatedAt: now };
         set((state) => ({ folders: [...state.folders, newFolder] }));
+
+        try {
+          const { data, error } = await supabase.from('folders').insert([{
+            name, color, parent_id: parentId, user_id: userId,
+          }]).select().single();
+          if (!error && data) {
+            set((state) => ({
+              folders: state.folders.map(f => f.id === localId ? {
+                id: data.id, name: data.name, parentId: data.parent_id,
+                color: data.color, createdAt: data.created_at, updatedAt: data.updated_at
+              } : f)
+            }));
+          }
+        } catch { /* keep local */ }
         get().logActivity('upload', `Created folder "${name}"`);
       },
 
@@ -160,11 +162,13 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        await supabase.from('folders').delete().eq('id', id).eq('user_id', userId);
         set((state) => ({
           folders: state.folders.filter(f => f.id !== id),
           files: state.files.filter(f => f.folderId !== id)
         }));
+        try {
+          await supabase.from('folders').delete().eq('id', id).eq('user_id', userId);
+        } catch { /* keep local delete */ }
         get().logActivity('delete', 'Deleted folder');
       },
 
@@ -172,42 +176,47 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const { data, error } = await supabase.from('files').insert([{
+        const localId = genId();
+        const now = new Date().toISOString();
+        const newFile: FileItem = {
+          id: localId,
           name: fileData.name,
           size: fileData.size,
           type: fileData.type,
           url: fileData.url,
-          folder_id: fileData.folderId,
+          folderId: fileData.folderId,
           category: fileData.category,
           tags: fileData.tags,
-          is_starred: fileData.isStarred,
-          is_archived: fileData.isArchived,
-          expiry_date: fileData.expiryDate || null,
-          user_id: userId,
-        }]).select().single();
-
-        if (error) { console.error('addFile error:', error); return; }
-
-        const newFile: FileItem = {
-          id: data.id,
-          name: data.name,
-          size: Number(data.size),
-          type: data.type,
-          url: data.url,
-          folderId: data.folder_id,
-          category: data.category,
-          tags: data.tags || [],
-          isStarred: data.is_starred,
-          isArchived: data.is_archived,
-          createdAt: data.created_at,
-          updatedAt: data.updated_at,
-          expiryDate: data.expiry_date
+          isStarred: fileData.isStarred,
+          isArchived: fileData.isArchived,
+          createdAt: now,
+          updatedAt: now,
+          expiryDate: fileData.expiryDate
         };
-
         set((state) => ({
           files: [newFile, ...state.files],
           user: state.user ? { ...state.user, usedStorage: state.user.usedStorage + newFile.size } : null
         }));
+
+        try {
+          const { data, error } = await supabase.from('files').insert([{
+            name: fileData.name, size: fileData.size, type: fileData.type,
+            url: fileData.url, folder_id: fileData.folderId, category: fileData.category,
+            tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
+            expiry_date: fileData.expiryDate || null, user_id: userId,
+          }]).select().single();
+          if (!error && data) {
+            set((state) => ({
+              files: state.files.map(f => f.id === localId ? {
+                id: data.id, name: data.name, size: Number(data.size),
+                type: data.type, url: data.url, folderId: data.folder_id,
+                category: data.category, tags: data.tags || [],
+                isStarred: data.is_starred, isArchived: data.is_archived,
+                createdAt: data.created_at, updatedAt: data.updated_at, expiryDate: data.expiry_date
+              } : f)
+            }));
+          }
+        } catch { /* keep local */ }
         get().logActivity('upload', `Uploaded file "${newFile.name}"`);
       },
 
@@ -215,17 +224,18 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (updates.isStarred !== undefined) dbUpdates.is_starred = updates.isStarred;
-        if (updates.isArchived !== undefined) dbUpdates.is_archived = updates.isArchived;
-        if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
-        if (updates.name !== undefined) dbUpdates.name = updates.name;
-        if (updates.category !== undefined) dbUpdates.category = updates.category;
-
-        await supabase.from('files').update(dbUpdates).eq('id', id).eq('user_id', userId);
         set((state) => ({
           files: state.files.map(f => f.id === id ? { ...f, ...updates, updatedAt: new Date().toISOString() } : f)
         }));
+        try {
+          const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+          if (updates.isStarred !== undefined) dbUpdates.is_starred = updates.isStarred;
+          if (updates.isArchived !== undefined) dbUpdates.is_archived = updates.isArchived;
+          if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
+          if (updates.name !== undefined) dbUpdates.name = updates.name;
+          if (updates.category !== undefined) dbUpdates.category = updates.category;
+          await supabase.from('files').update(dbUpdates).eq('id', id).eq('user_id', userId);
+        } catch { /* keep local update */ }
       },
 
       deleteFile: async (id) => {
@@ -233,11 +243,13 @@ export const useVaultStore = create<VaultStore>()(
         if (!userId) return;
 
         const file = get().files.find(f => f.id === id);
-        await supabase.from('files').delete().eq('id', id).eq('user_id', userId);
         set((state) => ({
           files: state.files.filter(f => f.id !== id),
           user: state.user && file ? { ...state.user, usedStorage: Math.max(0, state.user.usedStorage - file.size) } : state.user
         }));
+        try {
+          await supabase.from('files').delete().eq('id', id).eq('user_id', userId);
+        } catch { /* keep local delete */ }
         if (file) get().logActivity('delete', `Deleted file "${file.name}"`);
       },
 
@@ -245,32 +257,41 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const { data, error } = await supabase.from('passwords').insert([{
-          title: pwdData.title,
-          username: pwdData.username,
-          password_encrypted: pwdData.passwordEncrypted,
-          url: pwdData.url || null,
-          category: pwdData.category,
-          notes: pwdData.notes || null,
-          strength: pwdData.strength,
-          user_id: userId,
-        }]).select().single();
-
-        if (error) { console.error('addPassword error:', error); return; }
-
+        const localId = genId();
+        const now = new Date().toISOString();
         const newPwd: PasswordItem = {
-          id: data.id,
-          title: data.title,
-          username: data.username || '',
-          passwordEncrypted: data.password_encrypted,
-          url: data.url,
-          category: data.category,
-          notes: data.notes,
-          strength: data.strength,
-          createdAt: data.created_at,
-          updatedAt: data.updated_at,
+          id: localId,
+          title: pwdData.title,
+          username: pwdData.username || '',
+          passwordEncrypted: pwdData.passwordEncrypted,
+          url: pwdData.url,
+          category: pwdData.category || 'Personal',
+          notes: pwdData.notes,
+          strength: pwdData.strength,
+          createdAt: now,
+          updatedAt: now,
         };
         set((state) => ({ passwords: [newPwd, ...state.passwords] }));
+
+        try {
+          const { data, error } = await supabase.from('passwords').insert([{
+            title: pwdData.title, username: pwdData.username,
+            password_encrypted: pwdData.passwordEncrypted, url: pwdData.url || null,
+            category: pwdData.category || 'Personal', notes: pwdData.notes || null,
+            strength: pwdData.strength, user_id: userId,
+          }]).select().single();
+          if (!error && data) {
+            set((state) => ({
+              passwords: state.passwords.map(p => p.id === localId ? {
+                id: data.id, title: data.title, username: data.username || '',
+                passwordEncrypted: data.password_encrypted, url: data.url,
+                category: data.category, notes: data.notes,
+                strength: data.strength, createdAt: data.created_at,
+                updatedAt: data.updated_at,
+              } : p)
+            }));
+          }
+        } catch { /* keep local */ }
         get().logActivity('upload', `Saved password for "${newPwd.title}"`);
       },
 
@@ -278,24 +299,27 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (updates.lastUsed !== undefined) dbUpdates.last_used = updates.lastUsed;
-        if (updates.title !== undefined) dbUpdates.title = updates.title;
-        if (updates.username !== undefined) dbUpdates.username = updates.username;
-        if (updates.passwordEncrypted !== undefined) dbUpdates.password_encrypted = updates.passwordEncrypted;
-
-        await supabase.from('passwords').update(dbUpdates).eq('id', id).eq('user_id', userId);
         set((state) => ({
           passwords: state.passwords.map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p)
         }));
+        try {
+          const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+          if (updates.lastUsed !== undefined) dbUpdates.last_used = updates.lastUsed;
+          if (updates.title !== undefined) dbUpdates.title = updates.title;
+          if (updates.username !== undefined) dbUpdates.username = updates.username;
+          if (updates.passwordEncrypted !== undefined) dbUpdates.password_encrypted = updates.passwordEncrypted;
+          await supabase.from('passwords').update(dbUpdates).eq('id', id).eq('user_id', userId);
+        } catch { /* keep local update */ }
       },
 
       deletePassword: async (id) => {
         const userId = get().user?.id;
         if (!userId) return;
 
-        await supabase.from('passwords').delete().eq('id', id).eq('user_id', userId);
         set((state) => ({ passwords: state.passwords.filter(p => p.id !== id) }));
+        try {
+          await supabase.from('passwords').delete().eq('id', id).eq('user_id', userId);
+        } catch { /* keep local delete */ }
         get().logActivity('delete', 'Deleted saved password');
       },
 
@@ -303,30 +327,37 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const { data, error } = await supabase.from('notes').insert([{
+        const localId = genId();
+        const now = new Date().toISOString();
+        const newNote: NoteItem = {
+          id: localId,
           title: noteData.title,
           content: noteData.content,
           category: noteData.category,
-          is_pinned: noteData.isPinned,
-          is_locked: noteData.isLocked,
+          isPinned: noteData.isPinned,
+          isLocked: noteData.isLocked,
           tags: noteData.tags,
-          user_id: userId,
-        }]).select().single();
-
-        if (error) { console.error('addNote error:', error); return; }
-
-        const newNote: NoteItem = {
-          id: data.id,
-          title: data.title,
-          content: data.content,
-          category: data.category,
-          isPinned: data.is_pinned,
-          isLocked: data.is_locked,
-          tags: data.tags || [],
-          createdAt: data.created_at,
-          updatedAt: data.updated_at
+          createdAt: now,
+          updatedAt: now
         };
         set((state) => ({ notes: [newNote, ...state.notes] }));
+
+        try {
+          const { data, error } = await supabase.from('notes').insert([{
+            title: noteData.title, content: noteData.content, category: noteData.category,
+            is_pinned: noteData.isPinned, is_locked: noteData.isLocked,
+            tags: noteData.tags, user_id: userId,
+          }]).select().single();
+          if (!error && data) {
+            set((state) => ({
+              notes: state.notes.map(n => n.id === localId ? {
+                id: data.id, title: data.title, content: data.content,
+                category: data.category, isPinned: data.is_pinned, isLocked: data.is_locked,
+                tags: data.tags || [], createdAt: data.created_at, updatedAt: data.updated_at
+              } : n)
+            }));
+          }
+        } catch { /* keep local */ }
         get().logActivity('upload', `Created note "${newNote.title}"`);
       },
 
@@ -334,25 +365,28 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (updates.title !== undefined) dbUpdates.title = updates.title;
-        if (updates.content !== undefined) dbUpdates.content = updates.content;
-        if (updates.isPinned !== undefined) dbUpdates.is_pinned = updates.isPinned;
-        if (updates.isLocked !== undefined) dbUpdates.is_locked = updates.isLocked;
-        if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
-
-        await supabase.from('notes').update(dbUpdates).eq('id', id).eq('user_id', userId);
         set((state) => ({
           notes: state.notes.map(n => n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n)
         }));
+        try {
+          const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+          if (updates.title !== undefined) dbUpdates.title = updates.title;
+          if (updates.content !== undefined) dbUpdates.content = updates.content;
+          if (updates.isPinned !== undefined) dbUpdates.is_pinned = updates.isPinned;
+          if (updates.isLocked !== undefined) dbUpdates.is_locked = updates.isLocked;
+          if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
+          await supabase.from('notes').update(dbUpdates).eq('id', id).eq('user_id', userId);
+        } catch { /* keep local update */ }
       },
 
       deleteNote: async (id) => {
         const userId = get().user?.id;
         if (!userId) return;
 
-        await supabase.from('notes').delete().eq('id', id).eq('user_id', userId);
         set((state) => ({ notes: state.notes.filter(n => n.id !== id) }));
+        try {
+          await supabase.from('notes').delete().eq('id', id).eq('user_id', userId);
+        } catch { /* keep local delete */ }
         get().logActivity('delete', 'Deleted secure note');
       },
 
@@ -360,29 +394,36 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const { data, error } = await supabase.from('reminders').insert([{
-          title: remData.title,
-          item_id: remData.itemId,
-          item_type: remData.itemType,
-          expiry_date: remData.expiryDate,
-          notify_before_days: remData.notifyBeforeDays,
-          is_resolved: remData.isResolved,
-          user_id: userId,
-        }]).select().single();
-
-        if (error) { console.error('addReminder error:', error); return; }
-
+        const localId = genId();
+        const now = new Date().toISOString();
         const newRem: ReminderItem = {
-          id: data.id,
-          title: data.title,
-          itemId: data.item_id,
-          itemType: data.item_type,
-          expiryDate: data.expiry_date,
-          notifyBeforeDays: data.notify_before_days,
-          isResolved: data.is_resolved,
-          createdAt: data.created_at
+          id: localId,
+          title: remData.title,
+          itemId: remData.itemId,
+          itemType: remData.itemType,
+          expiryDate: remData.expiryDate,
+          notifyBeforeDays: remData.notifyBeforeDays,
+          isResolved: remData.isResolved,
+          createdAt: now
         };
         set((state) => ({ reminders: [newRem, ...state.reminders] }));
+
+        try {
+          const { data, error } = await supabase.from('reminders').insert([{
+            title: remData.title, item_id: remData.itemId, item_type: remData.itemType,
+            expiry_date: remData.expiryDate, notify_before_days: remData.notifyBeforeDays,
+            is_resolved: remData.isResolved, user_id: userId,
+          }]).select().single();
+          if (!error && data) {
+            set((state) => ({
+              reminders: state.reminders.map(r => r.id === localId ? {
+                id: data.id, title: data.title, itemId: data.item_id, itemType: data.item_type,
+                expiryDate: data.expiry_date, notifyBeforeDays: data.notify_before_days,
+                isResolved: data.is_resolved, createdAt: data.created_at
+              } : r)
+            }));
+          }
+        } catch { /* keep local */ }
         get().logActivity('reminder', `Added reminder for "${newRem.title}"`);
       },
 
@@ -390,18 +431,22 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        await supabase.from('reminders').update({ is_resolved: true }).eq('id', id).eq('user_id', userId);
         set((state) => ({
           reminders: state.reminders.map(r => r.id === id ? { ...r, isResolved: true } : r)
         }));
+        try {
+          await supabase.from('reminders').update({ is_resolved: true }).eq('id', id).eq('user_id', userId);
+        } catch { /* keep local update */ }
       },
 
       deleteReminder: async (id) => {
         const userId = get().user?.id;
         if (!userId) return;
 
-        await supabase.from('reminders').delete().eq('id', id).eq('user_id', userId);
         set((state) => ({ reminders: state.reminders.filter(r => r.id !== id) }));
+        try {
+          await supabase.from('reminders').delete().eq('id', id).eq('user_id', userId);
+        } catch { /* keep local delete */ }
       },
 
       logActivity: async (action, details) => {
@@ -419,16 +464,11 @@ export const useVaultStore = create<VaultStore>()(
         if (userId) {
           try {
             await supabase.from('activity_logs').insert([{
-              action: newLog.action,
-              details: newLog.details,
-              ip_address: newLog.ipAddress,
-              device: newLog.device,
-              timestamp: newLog.timestamp,
-              user_id: userId
+              action: newLog.action, details: newLog.details,
+              ip_address: newLog.ipAddress, device: newLog.device,
+              timestamp: newLog.timestamp, user_id: userId
             }]);
-          } catch (err) {
-            console.error('logActivity error:', err);
-          }
+          } catch { /* silently ignore */ }
         }
       },
 
@@ -454,29 +494,36 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId) return;
 
-        const { data, error } = await supabase.from('emergency_contacts').insert([{
+        const localId = genId();
+        const now = new Date().toISOString();
+        const newContact: EmergencyContact = {
+          id: localId,
           name: contactData.name,
           email: contactData.email,
           phone: contactData.phone,
           relationship: contactData.relationship,
-          access_delay_hours: contactData.accessDelayHours,
+          accessDelayHours: contactData.accessDelayHours,
           status: 'Active',
-          user_id: userId,
-        }]).select().single();
-
-        if (error) { console.error('addEmergencyContact error:', error); return; }
-
-        const newContact: EmergencyContact = {
-          id: data.id,
-          name: data.name,
-          email: data.email,
-          phone: data.phone,
-          relationship: data.relationship,
-          accessDelayHours: data.access_delay_hours,
-          status: data.status,
-          createdAt: data.created_at
+          createdAt: now
         };
         set((state) => ({ emergencyContacts: [...state.emergencyContacts, newContact] }));
+
+        try {
+          const { data, error } = await supabase.from('emergency_contacts').insert([{
+            name: contactData.name, email: contactData.email, phone: contactData.phone,
+            relationship: contactData.relationship, access_delay_hours: contactData.accessDelayHours,
+            status: 'Active', user_id: userId,
+          }]).select().single();
+          if (!error && data) {
+            set((state) => ({
+              emergencyContacts: state.emergencyContacts.map(c => c.id === localId ? {
+                id: data.id, name: data.name, email: data.email, phone: data.phone,
+                relationship: data.relationship, accessDelayHours: data.access_delay_hours,
+                status: data.status, createdAt: data.created_at
+              } : c)
+            }));
+          }
+        } catch { /* keep local */ }
         get().logActivity('emergency', `Added emergency contact: ${newContact.name}`);
       },
 
@@ -493,29 +540,36 @@ export const useVaultStore = create<VaultStore>()(
         if (!userId) return;
 
         const token = Math.random().toString(36).substring(2, 15);
-        const { data, error } = await supabase.from('shared_links').insert([{
-          file_id: linkData.fileId,
-          url_token: token,
-          is_password_protected: linkData.isPasswordProtected,
-          password: linkData.password || null,
-          is_one_time: linkData.isOneTime,
-          expires_at: linkData.expiresAt || null,
-          user_id: userId,
-        }]).select().single();
-
-        if (error) { console.error('createSharedLink error:', error); return; }
-
+        const localId = genId();
+        const now = new Date().toISOString();
         const newLink: SharedLink = {
-          id: data.id,
-          fileId: data.file_id,
-          urlToken: data.url_token,
-          isPasswordProtected: data.is_password_protected,
-          password: data.password,
-          isOneTime: data.is_one_time,
+          id: localId,
+          fileId: linkData.fileId,
+          urlToken: token,
+          isPasswordProtected: linkData.isPasswordProtected,
+          password: linkData.password,
+          isOneTime: linkData.isOneTime,
           downloadsCount: 0,
-          createdAt: data.created_at
+          createdAt: now
         };
         set((state) => ({ sharedLinks: [newLink, ...state.sharedLinks] }));
+
+        try {
+          const { data, error } = await supabase.from('shared_links').insert([{
+            file_id: linkData.fileId, url_token: token,
+            is_password_protected: linkData.isPasswordProtected, password: linkData.password || null,
+            is_one_time: linkData.isOneTime, expires_at: linkData.expiresAt || null, user_id: userId,
+          }]).select().single();
+          if (!error && data) {
+            set((state) => ({
+              sharedLinks: state.sharedLinks.map(l => l.id === localId ? {
+                id: data.id, fileId: data.file_id, urlToken: data.url_token,
+                isPasswordProtected: data.is_password_protected, password: data.password,
+                isOneTime: data.is_one_time, downloadsCount: 0, createdAt: data.created_at
+              } : l)
+            }));
+          }
+        } catch { /* keep local */ }
         get().logActivity('share', 'Created shared file link');
       },
 
@@ -532,6 +586,10 @@ export const useVaultStore = create<VaultStore>()(
             supabase.from('reminders').select('*').eq('user_id', userId),
             supabase.from('emergency_contacts').select('*').eq('user_id', userId),
           ]);
+
+          if (foldersRes.error && pwdRes.error) {
+            return false;
+          }
 
           const folders: Folder[] = (foldersRes.data || []).map(f => ({
             id: f.id, name: f.name, parentId: f.parent_id,
@@ -553,7 +611,7 @@ export const useVaultStore = create<VaultStore>()(
           const passwords: PasswordItem[] = (pwdRes.data || []).map(p => ({
             id: p.id, title: p.title, username: p.username || '',
             passwordEncrypted: p.password_encrypted, url: p.url,
-            category: p.category || 'Work', notes: p.notes,
+            category: p.category || 'Personal', notes: p.notes,
             strength: p.strength || 'Medium', createdAt: p.created_at,
             updatedAt: p.updated_at, lastUsed: p.last_used
           }));
@@ -594,6 +652,11 @@ export const useVaultStore = create<VaultStore>()(
       name: 'vaultify-store',
       partialize: (state) => ({
         hiddenVaultPin: state.hiddenVaultPin,
+        passwords: state.passwords,
+        notes: state.notes,
+        reminders: state.reminders,
+        folders: state.folders,
+        files: state.files,
       }),
     }
   )

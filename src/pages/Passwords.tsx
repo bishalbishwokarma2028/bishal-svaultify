@@ -33,7 +33,6 @@ export const Passwords: React.FC = () => {
   const [username, setUsername] = useState('');
   const [passwordEncrypted, setPasswordEncrypted] = useState('');
   const [url, setUrl] = useState('');
-  const [category, setCategory] = useState('Work');
   const [notes, setNotes] = useState('');
 
   // Generator state
@@ -87,7 +86,7 @@ export const Passwords: React.FC = () => {
         username,
         passwordEncrypted,
         url: url || undefined,
-        category,
+        category: 'Personal',
         notes: notes || undefined,
         strength: checkStrength(passwordEncrypted)
       });
@@ -428,13 +427,13 @@ export const Passwords: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-gray-300">Website or Account Name</label>
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-300">Which type of password do you want to save here?</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Gmail, Amazon, Bank Account"
+                    placeholder="e.g. Gmail, Amazon, Bank Account, WiFi"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-purple-500 outline-none"
@@ -450,22 +449,6 @@ export const Passwords: React.FC = () => {
                     onChange={(e) => setUsername(e.target.value)}
                     className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-purple-500 outline-none"
                   />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-300">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-slate-900 text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-purple-500 outline-none cursor-pointer"
-                  >
-                    <option value="Work">Work</option>
-                    <option value="Personal">Personal</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Shopping">Shopping</option>
-                    <option value="Social">Social Media</option>
-                    <option value="WiFi">WiFi Network</option>
-                  </select>
                 </div>
               </div>
 

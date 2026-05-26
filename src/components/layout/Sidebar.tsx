@@ -9,8 +9,6 @@ import {
   BellRing, 
   ShieldCheck, 
   EyeOff, 
-  History, 
-  Share2, 
   Settings, 
   Plus,
   ChevronLeft,
@@ -37,8 +35,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
     { name: 'Expiry Reminders', path: '/reminders', icon: BellRing },
     { name: 'Security Center', path: '/security', icon: ShieldCheck },
     { name: 'Hidden Vault', path: '/hidden-vault', icon: EyeOff, isAdvanced: true },
-    { name: 'Activity Timeline', path: '/timeline', icon: History },
-    { name: 'Secure Sharing', path: '/sharing', icon: Share2 },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
 

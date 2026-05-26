@@ -20,8 +20,6 @@ import { Reminders } from './pages/Reminders';
 import { Search } from './pages/Search';
 import { Security } from './pages/Security';
 import { HiddenVault } from './pages/HiddenVault';
-import { Timeline } from './pages/Timeline';
-import { Sharing } from './pages/Sharing';
 import { Settings } from './pages/Settings';
 import { MobileScanner } from './components/scanner/MobileScanner';
 
@@ -134,8 +132,6 @@ export const App: React.FC = () => {
                         <Route path="/search" element={<Search />} />
                         <Route path="/security" element={<Security />} />
                         <Route path="/hidden-vault" element={<HiddenVault />} />
-                        <Route path="/timeline" element={<Timeline />} />
-                        <Route path="/sharing" element={<Sharing />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/scanner" element={<div className="py-4"><MobileScanner /></div>} />
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
