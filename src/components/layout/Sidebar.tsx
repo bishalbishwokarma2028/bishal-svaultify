@@ -1,0 +1,174 @@
+import React, { useState } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { 
+  LayoutDashboard, 
+  FolderLock, 
+  KeyRound, 
+  FileText, 
+  Scan, 
+  BellRing, 
+  ShieldCheck, 
+  EyeOff, 
+  History, 
+  Share2, 
+  Settings, 
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Database
+} from 'lucide-react';
+import { useVaultStore } from '../../store/useVaultStore';
+
+interface SidebarProps {
+  onQuickUpload?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const { user } = useVaultStore();
+  const navigate = useNavigate();
+
+  const navItems = [
+    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Digital Vault', path: '/vault', icon: FolderLock },
+    { name: 'Password Vault', path: '/passwords', icon: KeyRound },
+    { name: 'Secure Notes', path: '/notes', icon: FileText },
+    { name: 'Document Scanner', path: '/scanner', icon: Scan },
+    { name: 'Expiry Reminders', path: '/reminders', icon: BellRing },
+    { name: 'Security Center', path: '/security', icon: ShieldCheck },
+    { name: 'Hidden Vault', path: '/hidden-vault', icon: EyeOff, isAdvanced: true },
+    { name: 'Activity Timeline', path: '/timeline', icon: History },
+    { name: 'Secure Sharing', path: '/sharing', icon: Share2 },
+    { name: 'Settings', path: '/settings', icon: Settings },
+  ];
+
+  // Storage percentage
+  const storagePct = user ? Math.min(100, Math.round((user.usedStorage / user.totalStorageLimit) * 100)) : 0;
+  const storageUsedStr = user ? (user.usedStorage / (1024 * 1024)).toFixed(1) + ' MB' : '0 MB';
+
+  return (
+    <aside 
+      className={`relative hidden md:flex flex-col border-r border-white/10 glass-panel-premium transition-all duration-300 select-none ${
+        isCollapsed ? 'w-20' : 'w-64'
+      }`}
+    >
+      {/* Brand Header */}
+      <div className="flex items-center justify-between p-4 border-b border-white/10">
+        {!isCollapsed && (
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate('/dashboard')}>
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg glow-blue">
+              <ShieldCheck className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <span className="font-bold tracking-wider text-white text-base">VAULTIFY</span>
+              <span className="block text-[9px] font-medium tracking-widest text-blue-400 uppercase">Proton SECURE</span>
+            </div>
+          </div>
+        )}
+
+        {isCollapsed && (
+          <div className="w-8 h-8 mx-auto rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg cursor-pointer" onClick={() => navigate('/dashboard')}>
+            <ShieldCheck className="w-5 h-5 text-white" />
+          </div>
+        )}
+
+        <button 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors absolute right-[-12px] top-5 bg-slate-900 border border-white/10 shadow"
+        >
+          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+
+      {/* Quick Action Button */}
+      <div className="p-3">
+        <button
+          onClick={onQuickUpload}
+          className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all shadow-lg glow-blue ${
+            isCollapsed ? 'px-0' : ''
+          }`}
+        >
+          <Plus className="w-5 h-5 flex-shrink-0" />
+          {!isCollapsed && <span>Quick Upload</span>}
+        </button>
+      </div>
+
+      {/* Nav links */}
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => `
+                flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group
+                ${isActive 
+                  ? 'bg-gradient-to-r from-blue-600/20 to-indigo-600/10 text-white border border-blue-500/20 glow-blue' 
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}
+                ${isCollapsed ? 'justify-center' : ''}
+              `}
+              title={item.name}
+            >
+              <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${item.isAdvanced ? 'text-purple-400' : ''}`} />
+              {!isCollapsed && (
+                <span className="flex-1 truncate">{item.name}</span>
+              )}
+              {!isCollapsed && item.isAdvanced && (
+                <span className="text-[10px] bg-purple-950/80 border border-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded-md font-semibold tracking-wider">
+                  ADV
+                </span>
+              )}
+            </NavLink>
+          );
+        })}
+      </div>
+
+      {/* Bottom Storage Meter */}
+      <div className="p-3 border-t border-white/10 bg-white/[0.01]">
+        {!isCollapsed ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-gray-400">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Database className="w-3.5 h-3.5 text-blue-400" />
+                Storage Usage
+              </span>
+              <span className="font-semibold text-gray-200">{storageUsedStr}</span>
+            </div>
+            {/* Progress bar */}
+            <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
+                style={{ width: `${Math.max(2, storagePct)}%` }}
+              />
+            </div>
+            <div className="text-[10px] text-gray-500 flex justify-between">
+              <span>{storagePct}% of 15 GB</span>
+              <span className="text-blue-400 font-medium">Premium Plan</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-1" title={`${storageUsedStr} used`}>
+            <Database className="w-4 h-4 text-blue-400" />
+            <span className="text-[10px] font-bold text-gray-400">{storagePct}%</span>
+          </div>
+        )}
+      </div>
+
+      {/* User profile brief */}
+      {!isCollapsed && user && (
+        <div className="p-3 border-t border-white/5 flex items-center gap-3">
+          <img 
+            src={user.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'} 
+            alt={user.fullName} 
+            className="w-8 h-8 rounded-full object-cover ring-2 ring-blue-500/30"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-white truncate">{user.fullName}</p>
+            <p className="text-[10px] text-gray-400 truncate">{user.email}</p>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+};
