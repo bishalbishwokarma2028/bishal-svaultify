@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ShieldCheck, Lock, Mail, Key, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, Key, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
 
@@ -10,82 +11,107 @@ export const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const { login } = useVaultStore();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!email || !email.includes('@')) {
-      toast({ title: 'Invalid Email Address', description: 'Please provide a legitimate communication endpoint.', type: 'error' });
+      toast({ title: 'Invalid Email', description: 'Please enter a valid email address.', type: 'error' });
+      return;
+    }
+
+    if (mode !== 'forgot' && password.length < 6) {
+      toast({ title: 'Password Too Short', description: 'Password must be at least 6 characters.', type: 'error' });
       return;
     }
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
-      
+    try {
       if (mode === 'forgot') {
-        toast({ 
-          title: 'Recovery Packet Dispatched', 
-          description: 'If verified, an encrypted master reset vector has been sent to your primary keys.', 
-          type: 'success' 
-        });
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        if (error) throw error;
+        toast({ title: 'Recovery Email Sent', description: 'Check your inbox for the password reset link.', type: 'success' });
         setMode('login');
+        setIsLoading(false);
         return;
       }
 
-      // Login / Signup success
-      login(email, fullName || undefined);
-      
-      toast({ 
-        title: mode === 'signup' ? 'Cryptographic Vault Initialized' : 'Session Restored Successfully', 
-        description: 'Argon2id client keys locked and loaded.', 
-        type: 'success' 
-      });
+      if (mode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: fullName || email.split('@')[0] },
+            emailRedirectTo: undefined,
+          },
+        });
 
-      navigate('/dashboard');
-    }, 1200);
-  };
+        if (error) throw error;
 
-  const handleGoogleAuth = () => {
-    setIsLoading(true);
-    setTimeout(() => {
+        if (data.user) {
+          const profile = {
+            id: data.user.id,
+            email: data.user.email!,
+            fullName: fullName || email.split('@')[0],
+            securityScore: 100,
+            totalStorageLimit: 15 * 1024 * 1024 * 1024,
+            usedStorage: 0,
+            createdAt: new Date().toISOString(),
+            isPremium: true,
+          };
+          login(profile);
+          toast({ title: 'Account Created!', description: 'Welcome to your secure vault.', type: 'success' });
+          navigate('/dashboard');
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+
+        if (data.user) {
+          const profile = {
+            id: data.user.id,
+            email: data.user.email!,
+            fullName: data.user.user_metadata?.full_name || email.split('@')[0],
+            securityScore: 100,
+            totalStorageLimit: 15 * 1024 * 1024 * 1024,
+            usedStorage: 0,
+            createdAt: data.user.created_at,
+            isPremium: true,
+          };
+          login(profile);
+          toast({ title: 'Welcome back!', description: 'Your vault is ready.', type: 'success' });
+          navigate('/dashboard');
+        }
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Something went wrong. Please try again.';
+      toast({ title: 'Authentication Error', description: msg, type: 'error' });
+    } finally {
       setIsLoading(false);
-      login('google.executive@vaultify.io', 'Google Authenticated User');
-      toast({ title: 'Google Single Sign-On Active', description: 'Federated token injected with Client Sandbox wrapping.', type: 'success' });
-      navigate('/dashboard');
-    }, 1000);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#030712] flex items-center justify-center px-4 py-12 relative overflow-hidden selection:bg-blue-600 selection:text-white">
-      {/* Floating Animated Background Orbs */}
       <motion.div 
-        animate={{ 
-          scale: [1, 1.2, 1],
-          x: [0, 50, 0],
-          y: [0, -30, 0]
-        }}
+        animate={{ scale: [1, 1.2, 1], x: [0, 50, 0], y: [0, -30, 0] }}
         transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
         className="absolute top-10 left-10 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none"
       />
-
       <motion.div 
-        animate={{ 
-          scale: [1, 1.1, 1],
-          x: [0, -40, 0],
-          y: [0, 40, 0]
-        }}
+        animate={{ scale: [1, 1.1, 1], x: [0, -40, 0], y: [0, 40, 0] }}
         transition={{ duration: 12, repeat: Infinity, ease: "easeInOut", delay: 2 }}
         className="absolute bottom-10 right-10 w-96 h-96 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none"
       />
 
       <div className="w-full max-w-md z-10 space-y-8">
-        {/* Top Logo branding */}
         <div className="text-center space-y-2">
           <div 
             onClick={() => navigate('/')}
@@ -95,32 +121,29 @@ export const Auth: React.FC = () => {
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             {mode === 'login' && 'Sign in to your Vault'}
-            {mode === 'signup' && 'Create your Secure Enclave'}
-            {mode === 'forgot' && 'Master Vector Restoration'}
+            {mode === 'signup' && 'Create your Secure Vault'}
+            {mode === 'forgot' && 'Reset your Password'}
           </h2>
           <p className="text-xs text-gray-400">
-            {mode === 'login' && 'Client-side AES-GCM decryption ready'}
-            {mode === 'signup' && 'Zero-Knowledge Client key architecture'}
-            {mode === 'forgot' && 'Dual authorization shard recovery'}
+            {mode === 'login' && 'Enter your email and password to access your vault'}
+            {mode === 'signup' && 'Create an account to start storing your files securely'}
+            {mode === 'forgot' && 'We will send you a link to reset your password'}
           </p>
         </div>
 
-        {/* Main Card */}
         <div className="glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl relative">
-          {/* Subtle live indicator badge */}
           <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-[10px] text-gray-400">
             <Lock className="w-2.5 h-2.5 text-emerald-400" />
-            <span>Argon2id Hashing</span>
+            <span>Secured by Supabase</span>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4 pt-2">
             {mode === 'signup' && (
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-300">Full Legal Name</label>
+                <label className="text-xs font-semibold text-gray-300">Full Name</label>
                 <input
                   type="text"
-                  required
-                  placeholder="Alexander Mercer"
+                  placeholder="Your full name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="w-full bg-white/[0.03] focus:bg-white/[0.06] text-white text-sm rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
@@ -129,13 +152,13 @@ export const Auth: React.FC = () => {
             )}
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-300">Secure Email Address</label>
+              <label className="text-xs font-semibold text-gray-300">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
                   type="email"
                   required
-                  placeholder="alex@vaultify.io"
+                  placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-white/[0.03] focus:bg-white/[0.06] text-white text-sm rounded-xl pl-10 pr-3.5 py-2.5 border border-white/10 focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
@@ -146,50 +169,56 @@ export const Auth: React.FC = () => {
             {mode !== 'forgot' && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-gray-300">Master Keyphrase</label>
+                  <label className="text-xs font-semibold text-gray-300">Password</label>
                   {mode === 'login' && (
                     <button
                       type="button"
                       onClick={() => setMode('forgot')}
                       className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
                     >
-                      Forgot?
+                      Forgot password?
                     </button>
                   )}
                 </div>
                 <div className="relative">
                   <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
-                    placeholder="••••••••••••••••"
+                    placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-white/[0.03] focus:bg-white/[0.06] text-white text-sm rounded-xl pl-10 pr-3.5 py-2.5 border border-white/10 focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
+                    className="w-full bg-white/[0.03] focus:bg-white/[0.06] text-white text-sm rounded-xl pl-10 pr-10 py-2.5 border border-white/10 focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
                 {mode === 'signup' && (
                   <p className="text-[10px] text-gray-500 mt-1">
-                    ⚠️ Must be at least 12 characters. We cannot recover this if lost.
+                    Must be at least 6 characters.
                   </p>
                 )}
               </div>
             )}
 
-            {/* Execute Button */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 mt-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-lg glow-blue flex items-center justify-center gap-2"
+              className="w-full py-3 mt-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all shadow-lg glow-blue flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
                   <span>
-                    {mode === 'login' && 'Decrypt & Sign In'}
-                    {mode === 'signup' && 'Generate Key Pair'}
-                    {mode === 'forgot' && 'Send Recovery Vector'}
+                    {mode === 'login' && 'Sign In'}
+                    {mode === 'signup' && 'Create Account'}
+                    {mode === 'forgot' && 'Send Reset Link'}
                   </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
@@ -197,48 +226,18 @@ export const Auth: React.FC = () => {
             </button>
           </form>
 
-          {/* Social login separator */}
-          {mode !== 'forgot' && (
-            <>
-              <div className="relative my-6 text-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/10" />
-                </div>
-                <span className="relative bg-slate-900 px-3 text-[10px] uppercase font-semibold text-gray-500 tracking-wider">
-                  Or Authenticate With
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleGoogleAuth}
-                disabled={isLoading}
-                className="w-full py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-white text-xs font-semibold transition-all flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                <span>Google Sign In</span>
-              </button>
-            </>
-          )}
-
-          {/* Bottom links */}
           <div className="mt-6 pt-4 border-t border-white/5 text-center text-xs text-gray-400">
             {mode === 'login' && (
               <p>
-                New to Vaultify?{' '}
+                Don't have an account?{' '}
                 <button onClick={() => setMode('signup')} className="text-blue-400 hover:text-blue-300 font-bold">
-                  Create an account
+                  Sign up for free
                 </button>
               </p>
             )}
             {mode === 'signup' && (
               <p>
-                Already have keys?{' '}
+                Already have an account?{' '}
                 <button onClick={() => setMode('login')} className="text-blue-400 hover:text-blue-300 font-bold">
                   Sign in
                 </button>
@@ -246,24 +245,23 @@ export const Auth: React.FC = () => {
             )}
             {mode === 'forgot' && (
               <p>
-                Remembered your master vector?{' '}
+                Remembered your password?{' '}
                 <button onClick={() => setMode('login')} className="text-blue-400 hover:text-blue-300 font-bold">
-                  Back to login
+                  Back to sign in
                 </button>
               </p>
             )}
           </div>
         </div>
 
-        {/* Security watermark footer */}
         <div className="text-center text-[10px] text-gray-600 space-y-1">
-          <p>Protected by physical secure Enclave & Vercel Web Crypto</p>
+          <p>Your data is stored securely in your own Supabase project</p>
           <div className="flex items-center justify-center gap-3">
-            <span>HIPAA Ready</span>
+            <span>End-to-End Private</span>
             <span>•</span>
-            <span>SOC2 Type II</span>
+            <span>Your Data, Your Control</span>
             <span>•</span>
-            <span>AES-GCM 256</span>
+            <span>AES-256 Encrypted</span>
           </div>
         </div>
       </div>

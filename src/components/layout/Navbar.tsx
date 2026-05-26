@@ -24,8 +24,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCommandPalette }) => {
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     toast({ title: 'Logged out successfully', type: 'info' });
     navigate('/');
   };

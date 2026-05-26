@@ -12,16 +12,14 @@ import {
   SharedLink,
   ActiveSession
 } from '../types';
-import { getActiveSupabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 interface VaultStore {
-  // User Authentication & Profile
   user: UserProfile | null;
   isAuthenticated: boolean;
   hiddenVaultUnlocked: boolean;
   hiddenVaultPin: string;
   
-  // Vault Data
   folders: Folder[];
   files: FileItem[];
   passwords: PasswordItem[];
@@ -32,49 +30,39 @@ interface VaultStore {
   sharedLinks: SharedLink[];
   sessions: ActiveSession[];
 
-  // Actions
-  login: (email: string, fullName?: string) => void;
-  logout: () => void;
+  login: (user: UserProfile) => void;
+  logout: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => void;
   
-  // Folders
   createFolder: (name: string, parentId?: string | null, color?: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
 
-  // Files
   addFile: (file: Omit<FileItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateFile: (id: string, updates: Partial<FileItem>) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
 
-  // Passwords
   addPassword: (pwd: Omit<PasswordItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updatePassword: (id: string, updates: Partial<PasswordItem>) => Promise<void>;
   deletePassword: (id: string) => Promise<void>;
 
-  // Notes
   addNote: (note: Omit<NoteItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateNote: (id: string, updates: Partial<NoteItem>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
 
-  // Reminders
   addReminder: (reminder: Omit<ReminderItem, 'id' | 'createdAt'>) => Promise<void>;
   resolveReminder: (id: string) => Promise<void>;
   deleteReminder: (id: string) => Promise<void>;
 
-  // Security & Logs
   logActivity: (action: ActivityLog['action'], details: string) => Promise<void>;
   setHiddenVaultPin: (pin: string) => void;
   unlockHiddenVault: (pin: string) => boolean;
   lockHiddenVault: () => void;
 
-  // Emergency
   addEmergencyContact: (contact: Omit<EmergencyContact, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   triggerEmergencyAccess: () => void;
 
-  // Sharing
   createSharedLink: (link: Omit<SharedLink, 'id' | 'createdAt' | 'downloadsCount'>) => Promise<void>;
 
-  // Sync / Load all from Supabase
   syncFromSupabase: () => Promise<boolean>;
 }
 
@@ -82,11 +70,10 @@ export const useVaultStore = create<VaultStore>()(
   persist(
     (set, get) => ({
       user: null,
-      isAuthenticated: false, // Start completely fresh and logged out!
+      isAuthenticated: false,
       hiddenVaultUnlocked: false,
-      hiddenVaultPin: '2026', // Default PIN for the Secret Vault
+      hiddenVaultPin: '2026',
       
-      // Start with completely empty data!
       folders: [],
       files: [],
       passwords: [],
@@ -97,24 +84,14 @@ export const useVaultStore = create<VaultStore>()(
       sharedLinks: [],
       sessions: [],
 
-      login: (email, fullName) => {
+      login: (user) => {
         set({
           isAuthenticated: true,
-          user: {
-            id: 'usr-' + Date.now(),
-            email,
-            fullName: fullName || email.split('@')[0],
-            securityScore: 100,
-            totalStorageLimit: 15 * 1024 * 1024 * 1024, // 15 GB
-            usedStorage: 0,
-            createdAt: new Date().toISOString(),
-            isPremium: true,
-          },
-          // Add a default active session for the user
+          user,
           sessions: [
             {
               id: 'sess-' + Date.now(),
-              device: 'Current Web Browser',
+              device: 'Web Browser',
               browser: 'Vaultify Secure Web',
               ip: '127.0.0.1',
               lastActive: 'Just now',
@@ -123,12 +100,11 @@ export const useVaultStore = create<VaultStore>()(
             }
           ]
         });
-        get().logActivity('login', `Logged in as ${email}`);
-        // Try to automatically load real data from Supabase if connected
         get().syncFromSupabase();
       },
 
-      logout: () => {
+      logout: async () => {
+        await supabase.auth.signOut();
         set({ 
           isAuthenticated: false, 
           user: null, 
@@ -149,333 +125,283 @@ export const useVaultStore = create<VaultStore>()(
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null
         }));
-        get().logActivity('edit', 'Updated profile settings');
       },
 
       createFolder: async (name, parentId = null, color = '#3b82f6') => {
-        const newFolder: Folder = {
-          id: 'f-' + Date.now(),
-          name,
-          parentId,
-          color,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
+        const userId = get().user?.id;
+        if (!userId) return;
 
-        // 1. Save locally
+        const { data, error } = await supabase.from('folders').insert([{
+          name,
+          color,
+          parent_id: parentId,
+          user_id: userId,
+        }]).select().single();
+
+        if (error) { console.error('createFolder error:', error); return; }
+
+        const newFolder: Folder = {
+          id: data.id,
+          name: data.name,
+          parentId: data.parent_id,
+          color: data.color,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at
+        };
         set((state) => ({ folders: [...state.folders, newFolder] }));
         get().logActivity('upload', `Created folder "${name}"`);
-
-        // 2. Save permanently to Supabase
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            await supabase.from('folders').insert([{
-              name: newFolder.name,
-              color: newFolder.color,
-              created_at: newFolder.createdAt,
-              updated_at: newFolder.updatedAt
-            }]);
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
       deleteFolder: async (id) => {
-        // 1. Delete locally
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        await supabase.from('folders').delete().eq('id', id).eq('user_id', userId);
         set((state) => ({
           folders: state.folders.filter(f => f.id !== id),
           files: state.files.filter(f => f.folderId !== id)
         }));
         get().logActivity('delete', 'Deleted folder');
-
-        // 2. Delete permanently from Supabase
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            // If the ID is a real UUID, delete it directly
-            await supabase.from('folders').delete().eq('name', id); // We can match by name if local ID was timestamp
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
       addFile: async (fileData) => {
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        const { data, error } = await supabase.from('files').insert([{
+          name: fileData.name,
+          size: fileData.size,
+          type: fileData.type,
+          url: fileData.url,
+          folder_id: fileData.folderId,
+          category: fileData.category,
+          tags: fileData.tags,
+          is_starred: fileData.isStarred,
+          is_archived: fileData.isArchived,
+          expiry_date: fileData.expiryDate || null,
+          user_id: userId,
+        }]).select().single();
+
+        if (error) { console.error('addFile error:', error); return; }
+
         const newFile: FileItem = {
-          ...fileData,
-          id: 'file-' + Date.now(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          id: data.id,
+          name: data.name,
+          size: Number(data.size),
+          type: data.type,
+          url: data.url,
+          folderId: data.folder_id,
+          category: data.category,
+          tags: data.tags || [],
+          isStarred: data.is_starred,
+          isArchived: data.is_archived,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+          expiryDate: data.expiry_date
         };
 
-        // 1. Save locally
         set((state) => ({
           files: [newFile, ...state.files],
           user: state.user ? { ...state.user, usedStorage: state.user.usedStorage + newFile.size } : null
         }));
         get().logActivity('upload', `Uploaded file "${newFile.name}"`);
-
-        // 2. Save permanently to Supabase
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            await supabase.from('files').insert([{
-              name: newFile.name,
-              size: newFile.size,
-              type: newFile.type,
-              url: newFile.url,
-              category: newFile.category,
-              tags: newFile.tags,
-              is_starred: newFile.isStarred,
-              is_archived: newFile.isArchived,
-              created_at: newFile.createdAt,
-              updated_at: newFile.updatedAt
-            }]);
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
       updateFile: async (id, updates) => {
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (updates.isStarred !== undefined) dbUpdates.is_starred = updates.isStarred;
+        if (updates.isArchived !== undefined) dbUpdates.is_archived = updates.isArchived;
+        if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.category !== undefined) dbUpdates.category = updates.category;
+
+        await supabase.from('files').update(dbUpdates).eq('id', id).eq('user_id', userId);
         set((state) => ({
           files: state.files.map(f => f.id === id ? { ...f, ...updates, updatedAt: new Date().toISOString() } : f)
         }));
-        get().logActivity('edit', 'Updated file details');
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          const target = get().files.find(f => f.id === id);
-          if (target) {
-            try {
-              await supabase.from('files').update({
-                is_starred: target.isStarred,
-                tags: target.tags,
-                updated_at: new Date().toISOString()
-              }).eq('name', target.name);
-            } catch (err) {
-              console.error('Supabase sync error:', err);
-            }
-          }
-        }
       },
 
       deleteFile: async (id) => {
-        const file = get().files.find(f => f.id === id);
-        if (file) {
-          set((state) => ({
-            files: state.files.filter(f => f.id !== id),
-            user: state.user ? { ...state.user, usedStorage: Math.max(0, state.user.usedStorage - file.size) } : null
-          }));
-          get().logActivity('delete', `Deleted file "${file.name}"`);
+        const userId = get().user?.id;
+        if (!userId) return;
 
-          const supabase = getActiveSupabase();
-          if (supabase) {
-            try {
-              await supabase.from('files').delete().eq('name', file.name);
-            } catch (err) {
-              console.error('Supabase sync error:', err);
-            }
-          }
-        }
+        const file = get().files.find(f => f.id === id);
+        await supabase.from('files').delete().eq('id', id).eq('user_id', userId);
+        set((state) => ({
+          files: state.files.filter(f => f.id !== id),
+          user: state.user && file ? { ...state.user, usedStorage: Math.max(0, state.user.usedStorage - file.size) } : state.user
+        }));
+        if (file) get().logActivity('delete', `Deleted file "${file.name}"`);
       },
 
       addPassword: async (pwdData) => {
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        const { data, error } = await supabase.from('passwords').insert([{
+          title: pwdData.title,
+          username: pwdData.username,
+          password_encrypted: pwdData.passwordEncrypted,
+          url: pwdData.url || null,
+          category: pwdData.category,
+          notes: pwdData.notes || null,
+          strength: pwdData.strength,
+          user_id: userId,
+        }]).select().single();
+
+        if (error) { console.error('addPassword error:', error); return; }
+
         const newPwd: PasswordItem = {
-          ...pwdData,
-          id: 'pwd-' + Date.now(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          id: data.id,
+          title: data.title,
+          username: data.username || '',
+          passwordEncrypted: data.password_encrypted,
+          url: data.url,
+          category: data.category,
+          notes: data.notes,
+          strength: data.strength,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
         };
-
-        set((state) => ({
-          passwords: [newPwd, ...state.passwords]
-        }));
+        set((state) => ({ passwords: [newPwd, ...state.passwords] }));
         get().logActivity('upload', `Saved password for "${newPwd.title}"`);
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            await supabase.from('passwords').insert([{
-              title: newPwd.title,
-              username: newPwd.username,
-              password_encrypted: newPwd.passwordEncrypted,
-              url: newPwd.url,
-              category: newPwd.category,
-              notes: newPwd.notes,
-              strength: newPwd.strength,
-              created_at: newPwd.createdAt,
-              updated_at: newPwd.updatedAt
-            }]);
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
       updatePassword: async (id, updates) => {
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (updates.lastUsed !== undefined) dbUpdates.last_used = updates.lastUsed;
+        if (updates.title !== undefined) dbUpdates.title = updates.title;
+        if (updates.username !== undefined) dbUpdates.username = updates.username;
+        if (updates.passwordEncrypted !== undefined) dbUpdates.password_encrypted = updates.passwordEncrypted;
+
+        await supabase.from('passwords').update(dbUpdates).eq('id', id).eq('user_id', userId);
         set((state) => ({
           passwords: state.passwords.map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p)
         }));
-        get().logActivity('edit', 'Updated saved password');
       },
 
       deletePassword: async (id) => {
-        const pwd = get().passwords.find(p => p.id === id);
-        set((state) => ({
-          passwords: state.passwords.filter(p => p.id !== id)
-        }));
-        get().logActivity('delete', 'Deleted saved password');
+        const userId = get().user?.id;
+        if (!userId) return;
 
-        if (pwd) {
-          const supabase = getActiveSupabase();
-          if (supabase) {
-            try {
-              await supabase.from('passwords').delete().eq('title', pwd.title);
-            } catch (err) {
-              console.error('Supabase sync error:', err);
-            }
-          }
-        }
+        await supabase.from('passwords').delete().eq('id', id).eq('user_id', userId);
+        set((state) => ({ passwords: state.passwords.filter(p => p.id !== id) }));
+        get().logActivity('delete', 'Deleted saved password');
       },
 
       addNote: async (noteData) => {
-        const newNote: NoteItem = {
-          ...noteData,
-          id: 'note-' + Date.now(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
+        const userId = get().user?.id;
+        if (!userId) return;
 
+        const { data, error } = await supabase.from('notes').insert([{
+          title: noteData.title,
+          content: noteData.content,
+          category: noteData.category,
+          is_pinned: noteData.isPinned,
+          is_locked: noteData.isLocked,
+          tags: noteData.tags,
+          user_id: userId,
+        }]).select().single();
+
+        if (error) { console.error('addNote error:', error); return; }
+
+        const newNote: NoteItem = {
+          id: data.id,
+          title: data.title,
+          content: data.content,
+          category: data.category,
+          isPinned: data.is_pinned,
+          isLocked: data.is_locked,
+          tags: data.tags || [],
+          createdAt: data.created_at,
+          updatedAt: data.updated_at
+        };
         set((state) => ({ notes: [newNote, ...state.notes] }));
         get().logActivity('upload', `Created note "${newNote.title}"`);
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            await supabase.from('notes').insert([{
-              title: newNote.title,
-              content: newNote.content,
-              category: newNote.category,
-              is_pinned: newNote.isPinned,
-              is_locked: newNote.isLocked,
-              tags: newNote.tags,
-              created_at: newNote.createdAt,
-              updated_at: newNote.updatedAt
-            }]);
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
       updateNote: async (id, updates) => {
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (updates.title !== undefined) dbUpdates.title = updates.title;
+        if (updates.content !== undefined) dbUpdates.content = updates.content;
+        if (updates.isPinned !== undefined) dbUpdates.is_pinned = updates.isPinned;
+        if (updates.isLocked !== undefined) dbUpdates.is_locked = updates.isLocked;
+        if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
+
+        await supabase.from('notes').update(dbUpdates).eq('id', id).eq('user_id', userId);
         set((state) => ({
           notes: state.notes.map(n => n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n)
         }));
-        get().logActivity('edit', 'Updated secure note');
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          const target = get().notes.find(n => n.id === id);
-          if (target) {
-            try {
-              await supabase.from('notes').update({
-                title: target.title,
-                content: target.content,
-                is_pinned: target.isPinned,
-                is_locked: target.isLocked,
-                updated_at: new Date().toISOString()
-              }).eq('title', target.title);
-            } catch (err) {
-              console.error('Supabase sync error:', err);
-            }
-          }
-        }
       },
 
       deleteNote: async (id) => {
-        const note = get().notes.find(n => n.id === id);
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        await supabase.from('notes').delete().eq('id', id).eq('user_id', userId);
         set((state) => ({ notes: state.notes.filter(n => n.id !== id) }));
         get().logActivity('delete', 'Deleted secure note');
-
-        if (note) {
-          const supabase = getActiveSupabase();
-          if (supabase) {
-            try {
-              await supabase.from('notes').delete().eq('title', note.title);
-            } catch (err) {
-              console.error('Supabase sync error:', err);
-            }
-          }
-        }
       },
 
       addReminder: async (remData) => {
-        const newRem: ReminderItem = {
-          ...remData,
-          id: 'rem-' + Date.now(),
-          createdAt: new Date().toISOString()
-        };
+        const userId = get().user?.id;
+        if (!userId) return;
 
+        const { data, error } = await supabase.from('reminders').insert([{
+          title: remData.title,
+          item_id: remData.itemId,
+          item_type: remData.itemType,
+          expiry_date: remData.expiryDate,
+          notify_before_days: remData.notifyBeforeDays,
+          is_resolved: remData.isResolved,
+          user_id: userId,
+        }]).select().single();
+
+        if (error) { console.error('addReminder error:', error); return; }
+
+        const newRem: ReminderItem = {
+          id: data.id,
+          title: data.title,
+          itemId: data.item_id,
+          itemType: data.item_type,
+          expiryDate: data.expiry_date,
+          notifyBeforeDays: data.notify_before_days,
+          isResolved: data.is_resolved,
+          createdAt: data.created_at
+        };
         set((state) => ({ reminders: [newRem, ...state.reminders] }));
         get().logActivity('reminder', `Added reminder for "${newRem.title}"`);
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            await supabase.from('reminders').insert([{
-              title: newRem.title,
-              item_id: newRem.itemId,
-              item_type: newRem.itemType,
-              expiry_date: newRem.expiryDate,
-              notify_before_days: newRem.notifyBeforeDays,
-              is_resolved: newRem.isResolved,
-              created_at: newRem.createdAt
-            }]);
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
       resolveReminder: async (id) => {
+        const userId = get().user?.id;
+        if (!userId) return;
+
+        await supabase.from('reminders').update({ is_resolved: true }).eq('id', id).eq('user_id', userId);
         set((state) => ({
           reminders: state.reminders.map(r => r.id === id ? { ...r, isResolved: true } : r)
         }));
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          const target = get().reminders.find(r => r.id === id);
-          if (target) {
-            try {
-              await supabase.from('reminders').update({ is_resolved: true }).eq('title', target.title);
-            } catch (err) {
-              console.error('Supabase sync error:', err);
-            }
-          }
-        }
       },
 
       deleteReminder: async (id) => {
-        const rem = get().reminders.find(r => r.id === id);
-        set((state) => ({ reminders: state.reminders.filter(r => r.id !== id) }));
+        const userId = get().user?.id;
+        if (!userId) return;
 
-        if (rem) {
-          const supabase = getActiveSupabase();
-          if (supabase) {
-            try {
-              await supabase.from('reminders').delete().eq('title', rem.title);
-            } catch (err) {
-              console.error('Supabase sync error:', err);
-            }
-          }
-        }
+        await supabase.from('reminders').delete().eq('id', id).eq('user_id', userId);
+        set((state) => ({ reminders: state.reminders.filter(r => r.id !== id) }));
       },
 
       logActivity: async (action, details) => {
+        const userId = get().user?.id;
         const newLog: ActivityLog = {
           id: 'log-' + Date.now(),
           action,
@@ -484,21 +410,20 @@ export const useVaultStore = create<VaultStore>()(
           device: 'Web Browser',
           timestamp: new Date().toISOString()
         };
-
         set((state) => ({ activityLogs: [newLog, ...state.activityLogs.slice(0, 49)] }));
 
-        const supabase = getActiveSupabase();
-        if (supabase) {
+        if (userId) {
           try {
             await supabase.from('activity_logs').insert([{
               action: newLog.action,
               details: newLog.details,
               ip_address: newLog.ipAddress,
               device: newLog.device,
-              timestamp: newLog.timestamp
+              timestamp: newLog.timestamp,
+              user_id: userId
             }]);
           } catch (err) {
-            console.error('Supabase sync error:', err);
+            console.error('logActivity error:', err);
           }
         }
       },
@@ -522,205 +447,149 @@ export const useVaultStore = create<VaultStore>()(
       },
 
       addEmergencyContact: async (contactData) => {
-        const newContact: EmergencyContact = {
-          ...contactData,
-          id: 'ec-' + Date.now(),
-          status: 'Active',
-          createdAt: new Date().toISOString()
-        };
+        const userId = get().user?.id;
+        if (!userId) return;
 
+        const { data, error } = await supabase.from('emergency_contacts').insert([{
+          name: contactData.name,
+          email: contactData.email,
+          phone: contactData.phone,
+          relationship: contactData.relationship,
+          access_delay_hours: contactData.accessDelayHours,
+          status: 'Active',
+          user_id: userId,
+        }]).select().single();
+
+        if (error) { console.error('addEmergencyContact error:', error); return; }
+
+        const newContact: EmergencyContact = {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          relationship: data.relationship,
+          accessDelayHours: data.access_delay_hours,
+          status: data.status,
+          createdAt: data.created_at
+        };
         set((state) => ({ emergencyContacts: [...state.emergencyContacts, newContact] }));
         get().logActivity('emergency', `Added emergency contact: ${newContact.name}`);
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            await supabase.from('emergency_contacts').insert([{
-              name: newContact.name,
-              email: newContact.email,
-              phone: newContact.phone,
-              relationship: newContact.relationship,
-              access_delay_hours: newContact.accessDelayHours,
-              status: newContact.status,
-              created_at: newContact.createdAt
-            }]);
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
       triggerEmergencyAccess: () => {
         set((state) => ({
           user: state.user ? { ...state.user, emergencyActivated: true } : null,
-          emergencyContacts: state.emergencyContacts.map(c => ({ ...c, status: 'Triggered' }))
+          emergencyContacts: state.emergencyContacts.map(c => ({ ...c, status: 'Triggered' as const }))
         }));
         get().logActivity('emergency', 'Triggered Emergency Access!');
       },
 
       createSharedLink: async (linkData) => {
-        const newLink: SharedLink = {
-          ...linkData,
-          id: 'link-' + Date.now(),
-          downloadsCount: 0,
-          createdAt: new Date().toISOString()
-        };
+        const userId = get().user?.id;
+        if (!userId) return;
 
+        const token = Math.random().toString(36).substring(2, 15);
+        const { data, error } = await supabase.from('shared_links').insert([{
+          file_id: linkData.fileId,
+          url_token: token,
+          is_password_protected: linkData.isPasswordProtected,
+          password: linkData.password || null,
+          is_one_time: linkData.isOneTime,
+          expires_at: linkData.expiresAt || null,
+          user_id: userId,
+        }]).select().single();
+
+        if (error) { console.error('createSharedLink error:', error); return; }
+
+        const newLink: SharedLink = {
+          id: data.id,
+          fileId: data.file_id,
+          urlToken: data.url_token,
+          isPasswordProtected: data.is_password_protected,
+          password: data.password,
+          isOneTime: data.is_one_time,
+          downloadsCount: 0,
+          createdAt: data.created_at
+        };
         set((state) => ({ sharedLinks: [newLink, ...state.sharedLinks] }));
         get().logActivity('share', 'Created shared file link');
-
-        const supabase = getActiveSupabase();
-        if (supabase) {
-          try {
-            await supabase.from('shared_links').insert([{
-              url_token: newLink.urlToken,
-              is_password_protected: newLink.isPasswordProtected,
-              password: newLink.password,
-              is_one_time: newLink.isOneTime,
-              created_at: newLink.createdAt
-            }]);
-          } catch (err) {
-            console.error('Supabase sync error:', err);
-          }
-        }
       },
 
-      // Completely Load all active data from Supabase if the user connects their keys!
       syncFromSupabase: async () => {
-        const supabase = getActiveSupabase();
-        if (!supabase) return false;
+        const userId = get().user?.id;
+        if (!userId) return false;
 
         try {
-          // Fetch Folders
-          const { data: foldersData } = await supabase.from('folders').select('*');
-          if (foldersData) {
-            const mappedFolders: Folder[] = foldersData.map(f => ({
-              id: f.id,
-              name: f.name,
-              parentId: f.parent_id,
-              color: f.color || '#3b82f6',
-              createdAt: f.created_at,
-              updatedAt: f.updated_at
-            }));
-            set({ folders: mappedFolders });
-          }
+          const [foldersRes, filesRes, pwdRes, notesRes, remRes, ecRes] = await Promise.all([
+            supabase.from('folders').select('*').eq('user_id', userId),
+            supabase.from('files').select('*').eq('user_id', userId),
+            supabase.from('passwords').select('*').eq('user_id', userId),
+            supabase.from('notes').select('*').eq('user_id', userId),
+            supabase.from('reminders').select('*').eq('user_id', userId),
+            supabase.from('emergency_contacts').select('*').eq('user_id', userId),
+          ]);
 
-          // Fetch Files
-          const { data: filesData } = await supabase.from('files').select('*');
-          if (filesData) {
-            let totalUsed = 0;
-            const mappedFiles: FileItem[] = filesData.map(f => {
-              totalUsed += Number(f.size || 0);
-              return {
-                id: f.id,
-                name: f.name,
-                size: Number(f.size || 0),
-                type: f.type,
-                url: f.url,
-                folderId: f.folder_id,
-                category: f.category || 'Personal IDs',
-                tags: f.tags || [],
-                isStarred: f.is_starred || false,
-                isArchived: f.is_archived || false,
-                createdAt: f.created_at,
-                updatedAt: f.updated_at,
-                expiryDate: f.expiry_date
-              };
-            });
-            set(state => ({ 
-              files: mappedFiles,
-              user: state.user ? { ...state.user, usedStorage: totalUsed } : null
-            }));
-          }
+          const folders: Folder[] = (foldersRes.data || []).map(f => ({
+            id: f.id, name: f.name, parentId: f.parent_id,
+            color: f.color || '#3b82f6', createdAt: f.created_at, updatedAt: f.updated_at
+          }));
 
-          // Fetch Passwords
-          const { data: pwdData } = await supabase.from('passwords').select('*');
-          if (pwdData) {
-            const mappedPwds: PasswordItem[] = pwdData.map(p => ({
-              id: p.id,
-              title: p.title,
-              username: p.username || '',
-              passwordEncrypted: p.password_encrypted,
-              url: p.url,
-              category: p.category || 'Work',
-              notes: p.notes,
-              strength: p.strength || 'Medium',
-              createdAt: p.created_at,
-              updatedAt: p.updated_at,
-              lastUsed: p.last_used
-            }));
-            set({ passwords: mappedPwds });
-          }
+          let totalUsed = 0;
+          const files: FileItem[] = (filesRes.data || []).map(f => {
+            totalUsed += Number(f.size || 0);
+            return {
+              id: f.id, name: f.name, size: Number(f.size || 0),
+              type: f.type, url: f.url, folderId: f.folder_id,
+              category: f.category || 'Personal IDs', tags: f.tags || [],
+              isStarred: f.is_starred || false, isArchived: f.is_archived || false,
+              createdAt: f.created_at, updatedAt: f.updated_at, expiryDate: f.expiry_date
+            };
+          });
 
-          // Fetch Notes
-          const { data: notesData } = await supabase.from('notes').select('*');
-          if (notesData) {
-            const mappedNotes: NoteItem[] = notesData.map(n => ({
-              id: n.id,
-              title: n.title,
-              content: n.content,
-              category: n.category || 'Personal',
-              isPinned: n.is_pinned || false,
-              isLocked: n.is_locked || false,
-              tags: n.tags || [],
-              createdAt: n.created_at,
-              updatedAt: n.updated_at
-            }));
-            set({ notes: mappedNotes });
-          }
+          const passwords: PasswordItem[] = (pwdRes.data || []).map(p => ({
+            id: p.id, title: p.title, username: p.username || '',
+            passwordEncrypted: p.password_encrypted, url: p.url,
+            category: p.category || 'Work', notes: p.notes,
+            strength: p.strength || 'Medium', createdAt: p.created_at,
+            updatedAt: p.updated_at, lastUsed: p.last_used
+          }));
 
-          // Fetch Reminders
-          const { data: remData } = await supabase.from('reminders').select('*');
-          if (remData) {
-            const mappedRems: ReminderItem[] = remData.map(r => ({
-              id: r.id,
-              title: r.title,
-              itemId: r.item_id,
-              itemType: r.item_type as any,
-              expiryDate: r.expiry_date,
-              notifyBeforeDays: r.notify_before_days || 30,
-              isResolved: r.is_resolved || false,
-              createdAt: r.created_at
-            }));
-            set({ reminders: mappedRems });
-          }
+          const notes: NoteItem[] = (notesRes.data || []).map(n => ({
+            id: n.id, title: n.title, content: n.content,
+            category: n.category || 'Personal', isPinned: n.is_pinned || false,
+            isLocked: n.is_locked || false, tags: n.tags || [],
+            createdAt: n.created_at, updatedAt: n.updated_at
+          }));
 
-          // Fetch Emergency Contacts
-          const { data: ecData } = await supabase.from('emergency_contacts').select('*');
-          if (ecData) {
-            const mappedEcs: EmergencyContact[] = ecData.map(e => ({
-              id: e.id,
-              name: e.name,
-              email: e.email,
-              phone: e.phone,
-              relationship: e.relationship || 'Spouse',
-              accessDelayHours: e.access_delay_hours || 24,
-              status: e.status as any,
-              createdAt: e.created_at
-            }));
-            set({ emergencyContacts: mappedEcs });
-          }
+          const reminders: ReminderItem[] = (remRes.data || []).map(r => ({
+            id: r.id, title: r.title, itemId: r.item_id,
+            itemType: r.item_type, expiryDate: r.expiry_date,
+            notifyBeforeDays: r.notify_before_days, isResolved: r.is_resolved,
+            createdAt: r.created_at
+          }));
+
+          const emergencyContacts: EmergencyContact[] = (ecRes.data || []).map(c => ({
+            id: c.id, name: c.name, email: c.email, phone: c.phone,
+            relationship: c.relationship, accessDelayHours: c.access_delay_hours,
+            status: c.status, createdAt: c.created_at
+          }));
+
+          set((state) => ({
+            folders, files, passwords, notes, reminders, emergencyContacts,
+            user: state.user ? { ...state.user, usedStorage: totalUsed } : null
+          }));
 
           return true;
         } catch (err) {
-          console.error('Supabase load error:', err);
+          console.error('syncFromSupabase error:', err);
           return false;
         }
-      }
+      },
     }),
     {
-      name: 'vaultify-production-storage-v2', // Updated key to guarantee zero pre-filled mock state
+      name: 'vaultify-store',
       partialize: (state) => ({
-        user: state.user,
-        isAuthenticated: state.isAuthenticated,
         hiddenVaultPin: state.hiddenVaultPin,
-        folders: state.folders,
-        files: state.files,
-        passwords: state.passwords,
-        notes: state.notes,
-        reminders: state.reminders,
-        emergencyContacts: state.emergencyContacts,
-        sharedLinks: state.sharedLinks,
       }),
     }
   )

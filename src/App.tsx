@@ -1,18 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useVaultStore } from './store/useVaultStore';
 import { ToastProvider } from './components/ui/Toast';
+import { supabase } from './lib/supabase';
 
-// Layouts
 import { Sidebar } from './components/layout/Sidebar';
 import { Navbar } from './components/layout/Navbar';
 import { MobileNav } from './components/layout/MobileNav';
-
-// Global Overlays
 import { CommandPalette } from './components/command/CommandPalette';
 import { InstallPromptModal } from './components/pwa/InstallPromptModal';
 
-// Pages
 import { Landing } from './pages/Landing';
 import { Auth } from './pages/Auth';
 import { Dashboard } from './pages/Dashboard';
@@ -26,53 +23,83 @@ import { HiddenVault } from './pages/HiddenVault';
 import { Timeline } from './pages/Timeline';
 import { Sharing } from './pages/Sharing';
 import { Settings } from './pages/Settings';
-
-// Scanner simulation
 import { MobileScanner } from './components/scanner/MobileScanner';
 
 export const App: React.FC = () => {
-  const { isAuthenticated } = useVaultStore();
-  
-  // App-level state for global triggers
+  const { isAuthenticated, login, logout } = useVaultStore();
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  
-  // Mobile side drawer state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  // Simulate optional PWA auto installation prompt after 5 seconds on load
-  React.useEffect(() => {
+  useEffect(() => {
+    // Check if there is already an active session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const u = session.user;
+        login({
+          id: u.id,
+          email: u.email!,
+          fullName: u.user_metadata?.full_name || u.email!.split('@')[0],
+          securityScore: 100,
+          totalStorageLimit: 15 * 1024 * 1024 * 1024,
+          usedStorage: 0,
+          createdAt: u.created_at,
+          isPremium: true,
+        });
+      }
+      setAuthLoading(false);
+    });
+
+    // Listen for future auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        logout();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
-      // Show install prompt once per user session
       const promptShown = sessionStorage.getItem('VAULTIFY_PWA_PROMPT_SHOWN');
-      if (!promptShown) {
+      if (!promptShown && isAuthenticated) {
         setShowInstallPrompt(true);
         sessionStorage.setItem('VAULTIFY_PWA_PROMPT_SHOWN', 'true');
       }
     }, 4500);
-
     return () => clearTimeout(timer);
-  }, []);
+  }, [isAuthenticated]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#030712] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center animate-pulse">
+            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ToastProvider>
       <Router>
         <Routes>
-          {/* Public/Unauthenticated Routes */}
           <Route 
             path="/" 
-            element={
-              isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />
-            } 
+            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />} 
           />
           <Route 
             path="/auth" 
-            element={
-              isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />
-            } 
+            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />} 
           />
 
-          {/* Protected Application Routes */}
           <Route
             path="/*"
             element={
@@ -80,22 +107,11 @@ export const App: React.FC = () => {
                 <Navigate to="/" replace />
               ) : (
                 <div className="flex h-screen bg-[#030712] text-gray-100 overflow-hidden font-sans">
-                  {/* Left Desktop Sidebar */}
-                  <Sidebar 
-                    onQuickUpload={() => {
-                      // Navigate to vault or trigger upload modal
-                      window.location.hash = '#/vault';
-                    }} 
-                  />
+                  <Sidebar onQuickUpload={() => {}} />
 
-                  {/* Main Application Interface */}
                   <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-                    {/* Top Universal Search Bar */}
-                    <Navbar 
-                      onOpenCommandPalette={() => setShowCommandPalette(true)} 
-                    />
+                    <Navbar onOpenCommandPalette={() => setShowCommandPalette(true)} />
 
-                    {/* Scrollable Viewport */}
                     <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20 md:pb-8">
                       <Routes>
                         <Route path="/dashboard" element={<Dashboard />} />
@@ -110,17 +126,13 @@ export const App: React.FC = () => {
                         <Route path="/sharing" element={<Sharing />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/scanner" element={<div className="py-4"><MobileScanner /></div>} />
-                        
-                        {/* Fallback routing */}
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
                       </Routes>
                     </main>
 
-                    {/* Bottom Premium Mobile Navigation layout */}
                     <MobileNav onOpenMenu={() => setMobileMenuOpen(true)} />
                   </div>
 
-                  {/* Mobile Side Drawer overlay */}
                   {mobileMenuOpen && (
                     <div className="fixed inset-0 z-50 md:hidden flex">
                       <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
@@ -136,19 +148,13 @@ export const App: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Universal Interactive Triggers */}
                   <CommandPalette
                     isOpen={showCommandPalette}
                     onClose={() => setShowCommandPalette(false)}
-                    onTriggerUpload={() => {
-                      window.location.hash = '#/vault';
-                    }}
-                    onTriggerCreateFolder={() => {
-                      window.location.hash = '#/vault';
-                    }}
+                    onTriggerUpload={() => {}}
+                    onTriggerCreateFolder={() => {}}
                   />
 
-                  {/* Premium PWA Install Modals */}
                   <InstallPromptModal
                     isOpen={showInstallPrompt}
                     onClose={() => setShowInstallPrompt(false)}
