@@ -10,7 +10,8 @@ import {
   Sparkles, 
   Trash2, 
   ExternalLink, 
-  Fingerprint
+  Fingerprint,
+  Pencil
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { PasswordItem } from '../types';
@@ -34,6 +35,14 @@ export const Passwords: React.FC = () => {
   const [passwordEncrypted, setPasswordEncrypted] = useState('');
   const [url, setUrl] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Edit Password state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [editNotes, setEditNotes] = useState('');
 
   // Generator state
   const [genLength, setGenLength] = useState(16);
@@ -76,6 +85,31 @@ export const Passwords: React.FC = () => {
 
     setPasswordEncrypted(result);
     toast({ title: 'Strong Password Created', type: 'info' });
+  };
+
+  const openEditModal = (pwd: PasswordItem) => {
+    setEditTitle(pwd.title);
+    setEditUsername(pwd.username || '');
+    setEditPassword(pwd.passwordEncrypted);
+    setEditUrl(pwd.url || '');
+    setEditNotes(pwd.notes || '');
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedId && editTitle && editPassword) {
+      await updatePassword(selectedId, {
+        title: editTitle,
+        username: editUsername,
+        passwordEncrypted: editPassword,
+        url: editUrl || undefined,
+        notes: editNotes || undefined,
+        strength: checkStrength(editPassword)
+      });
+      toast({ title: 'Password Updated', type: 'success' });
+      setShowEditModal(false);
+    }
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -236,19 +270,28 @@ export const Passwords: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    if (confirm(`Delete password for "${selectedPwd.title}"?`)) {
-                      deletePassword(selectedPwd.id);
-                      setSelectedId(passwords.length > 1 ? passwords.find(p => p.id !== selectedPwd.id)?.id || null : null);
-                      toast({ title: 'Password Deleted', type: 'info' });
-                    }
-                  }}
-                  className="p-2 rounded-xl bg-white/[0.03] hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/20 text-gray-500 hover:text-rose-400 transition-all"
-                  title="Delete Password"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openEditModal(selectedPwd)}
+                    className="p-2 rounded-xl bg-white/[0.03] hover:bg-blue-500/10 border border-white/5 hover:border-blue-500/20 text-gray-500 hover:text-blue-400 transition-all"
+                    title="Edit Password"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete password for "${selectedPwd.title}"?`)) {
+                        deletePassword(selectedPwd.id);
+                        setSelectedId(passwords.length > 1 ? passwords.find(p => p.id !== selectedPwd.id)?.id || null : null);
+                        toast({ title: 'Password Deleted', type: 'info' });
+                      }
+                    }}
+                    className="p-2 rounded-xl bg-white/[0.03] hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/20 text-gray-500 hover:text-rose-400 transition-all"
+                    title="Delete Password"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-4 pt-2">
@@ -547,6 +590,85 @@ export const Passwords: React.FC = () => {
                   className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold glow-purple"
                 >
                   Save Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* EDIT PASSWORD MODAL */}
+      {showEditModal && selectedPwd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowEditModal(false)} />
+          <div className="relative w-full max-w-lg glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl z-10 space-y-5 my-8">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-blue-400" />
+                <span>Edit Password</span>
+              </h3>
+              <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Name / Account</label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Username / Email</label>
+                <input
+                  type="text"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Password</label>
+                <input
+                  type="text"
+                  required
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none font-mono"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Website URL (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="https://..."
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Notes (Optional)</label>
+                <textarea
+                  rows={2}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2 border border-white/10 focus:border-blue-500 outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-gray-300">
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold glow-blue">
+                  Save Changes
                 </button>
               </div>
             </form>

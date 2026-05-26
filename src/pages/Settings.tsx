@@ -292,12 +292,12 @@ export const Settings: React.FC = () => {
                   <span className="text-xs font-mono text-emerald-400 font-bold">Active</span>
                 </div>
 
-                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex items-start justify-between gap-4">
                   <div>
                     <span className="text-xs font-bold text-white">Total Storage Limit</span>
-                    <p className="text-[10px] text-gray-500">Based on your Supabase plan</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Based on your Supabase free tier plan</p>
                   </div>
-                  <span className="text-xs font-mono text-blue-400 font-bold">15 GB</span>
+                  <span className="text-xs font-mono text-blue-400 font-bold text-right leading-relaxed">500 MB database<br/>+ 1 GB file storage</span>
                 </div>
 
                 <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">

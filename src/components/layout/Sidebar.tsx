@@ -57,7 +57,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
             </div>
             <div>
               <span className="font-bold tracking-wider text-white text-base">VAULTIFY</span>
-              <span className="block text-[9px] font-medium tracking-widest text-blue-400 uppercase">Proton SECURE</span>
             </div>
           </div>
         )}
@@ -138,9 +137,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
                 style={{ width: `${Math.max(2, storagePct)}%` }}
               />
             </div>
-            <div className="text-[10px] text-gray-500 flex justify-between">
-              <span>{storagePct}% of 15 GB</span>
-              <span className="text-blue-400 font-medium">Premium Plan</span>
+            <div className="text-[10px] text-gray-500">
+              <span>500 MB database + 1 GB file storage</span>
             </div>
           </div>
         ) : (

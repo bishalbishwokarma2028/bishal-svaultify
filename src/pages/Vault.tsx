@@ -16,7 +16,8 @@ import {
   ChevronRight, 
   Home, 
   FolderPlus,
-  Upload
+  Upload,
+  Pencil
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { CategoryType, FileItem } from '../types';
@@ -64,6 +65,11 @@ export const Vault: React.FC = () => {
   const [sharePassword, setSharePassword] = useState('');
   const [shareIsOneTime, setShareIsOneTime] = useState(true);
 
+  // Edit File Modal
+  const [editFile, setEditFile] = useState<FileItem | null>(null);
+  const [editFileName, setEditFileName] = useState('');
+  const [editFileCategory, setEditFileCategory] = useState('');
+
   // Built-in categories
   const CATEGORIES: { id: string; label: string }[] = [
     { id: 'All', label: 'All Files' },
@@ -108,6 +114,22 @@ export const Vault: React.FC = () => {
     e.stopPropagation();
     await updateFile(id, { isStarred: !current });
     toast({ title: !current ? 'Added to Starred files' : 'Removed from Starred', type: 'info' });
+  };
+
+  const openEditFile = (file: FileItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditFile(file);
+    setEditFileName(file.name);
+    setEditFileCategory(file.category);
+  };
+
+  const handleEditFileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editFile && editFileName.trim()) {
+      await updateFile(editFile.id, { name: editFileName.trim(), category: editFileCategory as CategoryType });
+      toast({ title: 'File Updated', type: 'success' });
+      setEditFile(null);
+    }
   };
 
   const handleSimulatedFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -396,6 +418,14 @@ export const Vault: React.FC = () => {
                           }`}
                         >
                           <Star className={`w-3.5 h-3.5 ${file.isStarred ? 'fill-current' : ''}`} />
+                        </button>
+
+                        <button
+                          onClick={(e) => openEditFile(file, e)}
+                          className="p-1.5 rounded-lg text-gray-600 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100"
+                          title="Edit / Rename"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
                         </button>
 
                         <button
@@ -766,6 +796,57 @@ export const Vault: React.FC = () => {
                   className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold glow-blue"
                 >
                   Copy Link
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT FILE MODAL */}
+      {editFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setEditFile(null)} />
+          <div className="relative w-full max-w-md glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl z-10 space-y-5">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-blue-400" />
+                <span>Edit File</span>
+              </h3>
+              <button onClick={() => setEditFile(null)} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+
+            <form onSubmit={handleEditFileSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">File Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editFileName}
+                  onChange={(e) => setEditFileName(e.target.value)}
+                  className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Category</label>
+                <select
+                  value={editFileCategory}
+                  onChange={(e) => setEditFileCategory(e.target.value)}
+                  className="w-full bg-[#0d0d14] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none"
+                >
+                  {['Documents', 'Photos', 'Videos', 'Audio', 'Archives', 'Code', 'Other'].map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setEditFile(null)} className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-gray-300">
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold glow-blue">
+                  Save Changes
                 </button>
               </div>
             </form>
