@@ -13,9 +13,10 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
-  Database
+  HardDrive,
+  Crown
 } from 'lucide-react';
-import { useVaultStore } from '../../store/useVaultStore';
+import { useVaultStore, FREE_STORAGE_LIMIT } from '../../store/useVaultStore';
 
 interface SidebarProps {
   onQuickUpload?: () => void;
@@ -23,7 +24,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { user } = useVaultStore();
+  const { user, files, isPremium } = useVaultStore();
   const navigate = useNavigate();
 
   const navItems = [
@@ -38,9 +39,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
 
-  // Storage percentage
-  const storagePct = user ? Math.min(100, Math.round((user.usedStorage / user.totalStorageLimit) * 100)) : 0;
-  const storageUsedStr = user ? (user.usedStorage / (1024 * 1024)).toFixed(1) + ' MB' : '0 MB';
+  const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
+  const usedMB = (usedBytes / (1024 * 1024)).toFixed(1);
+  const usedGB = (usedBytes / (1024 * 1024 * 1024)).toFixed(2);
+  const limitGB = 5;
+  const pct = isPremium ? 0 : Math.min(100, Math.round((usedBytes / FREE_STORAGE_LIMIT) * 100));
 
   return (
     <aside 
@@ -119,32 +122,49 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
         })}
       </div>
 
-      {/* Bottom Storage Meter */}
+      {/* Bottom Storage / Plan Info */}
       <div className="p-3 border-t border-white/10 bg-white/[0.01]">
         {!isCollapsed ? (
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-gray-400">
-              <span className="flex items-center gap-1.5 font-medium">
-                <Database className="w-3.5 h-3.5 text-blue-400" />
-                Storage Usage
-              </span>
-              <span className="font-semibold text-gray-200">{storageUsedStr}</span>
-            </div>
-            {/* Progress bar */}
-            <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
-                style={{ width: `${Math.max(2, storagePct)}%` }}
-              />
-            </div>
-            <div className="text-[10px] text-gray-500">
-              <span>500 MB database + 1 GB file storage</span>
-            </div>
+            {isPremium ? (
+              <div className="flex items-center gap-2">
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-xs font-semibold text-amber-300">Premium — Unlimited Storage</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-xs text-gray-400">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <HardDrive className="w-3.5 h-3.5 text-blue-400" />
+                    Device Storage
+                  </span>
+                  <span className="font-semibold text-gray-200">{usedMB} MB</span>
+                </div>
+                <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      pct > 80 ? 'bg-gradient-to-r from-rose-500 to-red-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                    }`}
+                    style={{ width: `${Math.max(2, pct)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-gray-500">
+                  <span>{usedGB} GB used</span>
+                  <span>{limitGB} GB free limit</span>
+                </div>
+              </>
+            )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-1" title={`${storageUsedStr} used`}>
-            <Database className="w-4 h-4 text-blue-400" />
-            <span className="text-[10px] font-bold text-gray-400">{storagePct}%</span>
+          <div className="flex flex-col items-center gap-1" title={isPremium ? 'Premium User' : `${usedMB} MB used`}>
+            {isPremium ? (
+              <Crown className="w-4 h-4 text-amber-400" />
+            ) : (
+              <>
+                <HardDrive className="w-4 h-4 text-blue-400" />
+                <span className="text-[10px] font-bold text-gray-400">{pct}%</span>
+              </>
+            )}
           </div>
         )}
       </div>

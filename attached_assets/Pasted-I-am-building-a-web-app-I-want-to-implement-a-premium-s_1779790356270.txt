@@ -1,0 +1,112 @@
+I am building a web app.
+
+I want to implement a premium storage system with manual payment verification.
+
+FREE PLAN:
+- Users can store up to 5GB of data only.
+
+PREMIUM PLAN:
+- Users can unlock unlimited storage by paying Rs.300 (one-time payment).
+- Display text: "Rs.300 for Lifetime Unlimited Storage"
+
+========================
+UI FEATURES
+========================
+
+1. Create a Premium Upgrade section:
+   - Title: "Upgrade to Premium"
+   - Description: "Unlock unlimited storage forever for just Rs.300"
+   - Button: "Unlock Now"
+
+2. When user clicks "Unlock Now":
+   - Show a modal/popup
+   - Display QR code image
+   - IMPORTANT: Use image path "/qr.png" (I will upload it manually)
+   - Show instructions:
+     "Scan the QR code and pay Rs.300"
+
+3. Inside the modal, add:
+   - Input field: "Enter Transaction ID"
+   - Button: "Submit Payment"
+
+4. When user clicks "Submit Payment":
+   - Validate input (must not be empty)
+   - Save payment request in localStorage as:
+       {
+         transactionId: "...",
+         status: "pending"
+       }
+   - Show message:
+     "Your payment is under review. Premium will be activated after verification."
+
+5. Add a status system:
+   - If status = "pending":
+       Show "Verification Pending"
+   - If status = "approved":
+       Unlock premium
+
+========================
+PREMIUM LOGIC
+========================
+
+6. If user is premium:
+   - Remove 5GB storage limit
+   - Show badge: "Premium User"
+   - Disable upgrade button
+
+7. If user is NOT premium:
+   - Enforce 5GB limit
+   - Show message when exceeded:
+     "Storage limit reached. Upgrade to Premium."
+
+========================
+DATA STORAGE
+========================
+
+8. Use localStorage to store:
+   - isPremium (true/false)
+   - paymentStatus (pending/approved)
+   - transactionId
+
+9. On page load:
+   - Check localStorage
+   - Restore user state
+
+========================
+ADMIN SIMULATION (IMPORTANT)
+========================
+
+10. Add a hidden admin button (for testing):
+   - Button text: "Approve Payment"
+   - When clicked:
+       - Change paymentStatus to "approved"
+       - Set isPremium = true
+       - Show message: "Premium Activated Successfully!"
+
+========================
+DESIGN
+========================
+
+11. Use modern UI:
+   - Clean layout
+   - Card-style design
+   - Responsive for mobile
+
+12. Add small animations:
+   - Modal fade-in
+   - Button hover effect
+
+========================
+IMPORTANT NOTES
+========================
+
+- Do NOT implement real payment API
+- This is manual verification system
+- Keep code simple and beginner-friendly
+- Use plain JavaScript (or React if project uses React)
+
+========================
+OUTPUT
+========================
+
+Provide full working code (HTML + CSS + JavaScript OR React)

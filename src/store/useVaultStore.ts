@@ -15,6 +15,8 @@ import {
 import { supabase } from '../lib/supabase';
 import { idbStorage, storeFileContent, deleteFileContent, LOCAL_FILE_PREFIX } from '../lib/localDB';
 
+export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB
+
 interface VaultStore {
   user: UserProfile | null;
   isAuthenticated: boolean;
@@ -22,6 +24,11 @@ interface VaultStore {
   hiddenVaultPin: string;
   theme: 'dark' | 'light';
   setTheme: (theme: 'dark' | 'light') => void;
+  isPremium: boolean;
+  paymentStatus: 'none' | 'pending' | 'approved';
+  premiumTransactionId: string;
+  submitPremiumPayment: (txId: string) => void;
+  approvePayment: () => void;
   
   folders: Folder[];
   files: FileItem[];
@@ -81,6 +88,15 @@ export const useVaultStore = create<VaultStore>()(
       hiddenVaultPin: '',
       theme: 'dark',
       setTheme: (theme) => set({ theme }),
+      isPremium: false,
+      paymentStatus: 'none',
+      premiumTransactionId: '',
+      submitPremiumPayment: (txId) => {
+        set({ paymentStatus: 'pending', premiumTransactionId: txId });
+      },
+      approvePayment: () => {
+        set({ paymentStatus: 'approved', isPremium: true });
+      },
       
       folders: [],
       files: [],
@@ -184,6 +200,13 @@ export const useVaultStore = create<VaultStore>()(
       },
 
       addFile: async (fileData, fileContent?: string) => {
+        const { isPremium, files } = get();
+        if (!isPremium) {
+          const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
+          if (usedBytes + fileData.size > FREE_STORAGE_LIMIT) {
+            throw new Error('STORAGE_LIMIT_EXCEEDED');
+          }
+        }
         const localId = genId();
         const now = new Date().toISOString();
 
@@ -676,6 +699,9 @@ export const useVaultStore = create<VaultStore>()(
         reminders: state.reminders,
         folders: state.folders,
         files: state.files,
+        isPremium: state.isPremium,
+        paymentStatus: state.paymentStatus,
+        premiumTransactionId: state.premiumTransactionId,
       }),
     }
   )
