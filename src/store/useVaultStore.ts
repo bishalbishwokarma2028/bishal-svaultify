@@ -20,6 +20,8 @@ interface VaultStore {
   isAuthenticated: boolean;
   hiddenVaultUnlocked: boolean;
   hiddenVaultPin: string;
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
   
   folders: Folder[];
   files: FileItem[];
@@ -76,7 +78,9 @@ export const useVaultStore = create<VaultStore>()(
       user: null,
       isAuthenticated: false,
       hiddenVaultUnlocked: false,
-      hiddenVaultPin: '2026',
+      hiddenVaultPin: '',
+      theme: 'dark',
+      setTheme: (theme) => set({ theme }),
       
       folders: [],
       files: [],
@@ -665,6 +669,7 @@ export const useVaultStore = create<VaultStore>()(
       name: 'vaultify-store',
       storage: createJSONStorage(() => idbStorage),
       partialize: (state) => ({
+        theme: state.theme,
         hiddenVaultPin: state.hiddenVaultPin,
         passwords: state.passwords,
         notes: state.notes,

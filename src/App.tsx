@@ -24,7 +24,12 @@ import { Settings } from './pages/Settings';
 import { MobileScanner } from './components/scanner/MobileScanner';
 
 export const App: React.FC = () => {
-  const { isAuthenticated, login, clearAuth } = useVaultStore();
+  const { isAuthenticated, login, clearAuth, theme } = useVaultStore();
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme ?? 'dark');
+  }, [theme]);
+
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
