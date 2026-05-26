@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { supabase } from '../lib/supabase';
 import { idbStorage, storeFileContent, deleteFileContent, LOCAL_FILE_PREFIX } from '../lib/localDB';
+import { saveRequest, isEmailApproved } from '../lib/premiumRequests';
 
 export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB
 
@@ -29,6 +30,7 @@ interface VaultStore {
   premiumTransactionId: string;
   submitPremiumPayment: (txId: string) => void;
   approvePayment: () => void;
+  syncPremiumFromGlobal: () => void;
   
   folders: Folder[];
   files: FileItem[];
@@ -92,10 +94,27 @@ export const useVaultStore = create<VaultStore>()(
       paymentStatus: 'none',
       premiumTransactionId: '',
       submitPremiumPayment: (txId) => {
+        const user = get().user;
+        if (user) {
+          saveRequest({
+            id: genId(),
+            email: user.email,
+            userId: user.id,
+            transactionId: txId,
+            status: 'pending',
+            submittedAt: new Date().toISOString(),
+          });
+        }
         set({ paymentStatus: 'pending', premiumTransactionId: txId });
       },
       approvePayment: () => {
         set({ paymentStatus: 'approved', isPremium: true });
+      },
+      syncPremiumFromGlobal: () => {
+        const user = get().user;
+        if (user && isEmailApproved(user.email)) {
+          set({ isPremium: true, paymentStatus: 'approved' });
+        }
       },
       
       folders: [],

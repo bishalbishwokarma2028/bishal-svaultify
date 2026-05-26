@@ -16,11 +16,13 @@ import {
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
+import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
 
 export const Notes: React.FC = () => {
   const { notes, addNote, updateNote, deleteNote, unlockHiddenVault } = useVaultStore();
   const { toast } = useToast();
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
     notes.length > 0 ? notes[0].id : null
   );
@@ -292,13 +294,7 @@ export const Notes: React.FC = () => {
                 </div>
 
                 <button
-                  onClick={() => {
-                    if (confirm(`Delete note "${selectedNote.title}"?`)) {
-                      deleteNote(selectedNote.id);
-                      setSelectedId(notes.length > 1 ? notes.find(n => n.id !== selectedNote.id)?.id || null : null);
-                      toast({ title: 'Note Deleted', type: 'info' });
-                    }
-                  }}
+                  onClick={() => setConfirmDeleteId(selectedNote.id)}
                   className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all ml-auto"
                   title="Delete Note"
                 >
@@ -527,6 +523,22 @@ export const Notes: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={confirmDeleteId !== null}
+        itemName={notes.find(n => n.id === confirmDeleteId)?.title || ''}
+        itemType="note"
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          const note = notes.find(n => n.id === confirmDeleteId);
+          if (note) {
+            deleteNote(note.id);
+            setSelectedId(notes.length > 1 ? notes.find(n => n.id !== note.id)?.id || null : null);
+            toast({ title: 'Note Deleted', type: 'info' });
+          }
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 };

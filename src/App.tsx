@@ -12,6 +12,7 @@ import { InstallPromptModal } from './components/pwa/InstallPromptModal';
 
 import { Landing } from './pages/Landing';
 import { Auth } from './pages/Auth';
+import { Admin } from './pages/Admin';
 import { Dashboard } from './pages/Dashboard';
 import { Vault } from './pages/Vault';
 import { Passwords } from './pages/Passwords';
@@ -24,7 +25,7 @@ import { Settings } from './pages/Settings';
 import { MobileScanner } from './components/scanner/MobileScanner';
 
 export const App: React.FC = () => {
-  const { isAuthenticated, login, clearAuth, theme } = useVaultStore();
+  const { isAuthenticated, login, clearAuth, theme, syncPremiumFromGlobal } = useVaultStore();
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme ?? 'dark');
@@ -53,8 +54,9 @@ export const App: React.FC = () => {
           totalStorageLimit: 15 * 1024 * 1024 * 1024,
           usedStorage: 0,
           createdAt: u.created_at,
-          isPremium: true,
+          isPremium: false,
         });
+        setTimeout(() => syncPremiumFromGlobal(), 100);
       }
       setAuthLoading(false);
     });
@@ -71,8 +73,9 @@ export const App: React.FC = () => {
           totalStorageLimit: 15 * 1024 * 1024 * 1024,
           usedStorage: 0,
           createdAt: u.created_at,
-          isPremium: true,
+          isPremium: false,
         });
+        setTimeout(() => syncPremiumFromGlobal(), 100);
       } else if (event === 'SIGNED_OUT') {
         clearAuth();
       }
@@ -111,6 +114,7 @@ export const App: React.FC = () => {
     <ToastProvider>
       <Router>
         <Routes>
+          <Route path="/admin" element={<Admin />} />
           <Route
             path="/"
             element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />}

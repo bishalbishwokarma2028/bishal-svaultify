@@ -13,12 +13,14 @@ import {
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
+import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
 
 export const Reminders: React.FC = () => {
   const { reminders, files, passwords, addReminder, resolveReminder, deleteReminder } = useVaultStore();
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [showAddModal, setShowAddModal] = useState(false);
 
@@ -184,10 +186,7 @@ export const Reminders: React.FC = () => {
                         </button>
 
                         <button
-                          onClick={() => {
-                            deleteReminder(rem.id);
-                            toast({ title: 'Reminder Deleted', type: 'info' });
-                          }}
+                          onClick={() => setConfirmDeleteId(rem.id)}
                           className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-white/5 transition-all"
                           title="Delete Reminder"
                         >
@@ -224,7 +223,7 @@ export const Reminders: React.FC = () => {
                     </div>
 
                     <button
-                      onClick={() => deleteReminder(rem.id)}
+                      onClick={() => setConfirmDeleteId(rem.id)}
                       className="text-[10px] text-gray-600 hover:text-rose-400"
                     >
                       Delete
@@ -423,6 +422,20 @@ export const Reminders: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={confirmDeleteId !== null}
+        itemName={reminders.find(r => r.id === confirmDeleteId)?.title || ''}
+        itemType="reminder"
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          if (confirmDeleteId) {
+            deleteReminder(confirmDeleteId);
+            toast({ title: 'Reminder Deleted', type: 'info' });
+          }
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 };

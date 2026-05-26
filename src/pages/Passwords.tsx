@@ -16,6 +16,7 @@ import {
 import { useVaultStore } from '../store/useVaultStore';
 import { PasswordItem } from '../types';
 import { useToast } from '../components/ui/Toast';
+import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
 
 export const Passwords: React.FC = () => {
   const { passwords, addPassword, updatePassword, deletePassword } = useVaultStore();
@@ -25,6 +26,7 @@ export const Passwords: React.FC = () => {
     passwords.length > 0 ? passwords[0].id : null
   );
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
   const [biometricUnlocking, setBiometricUnlocking] = useState<string | null>(null);
@@ -279,13 +281,7 @@ export const Passwords: React.FC = () => {
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`Delete password for "${selectedPwd.title}"?`)) {
-                        deletePassword(selectedPwd.id);
-                        setSelectedId(passwords.length > 1 ? passwords.find(p => p.id !== selectedPwd.id)?.id || null : null);
-                        toast({ title: 'Password Deleted', type: 'info' });
-                      }
-                    }}
+                    onClick={() => setConfirmDeleteId(selectedPwd.id)}
                     className="p-2 rounded-xl bg-white/[0.03] hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/20 text-gray-500 hover:text-rose-400 transition-all"
                     title="Delete Password"
                   >
@@ -675,6 +671,22 @@ export const Passwords: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={confirmDeleteId !== null}
+        itemName={passwords.find(p => p.id === confirmDeleteId)?.title || ''}
+        itemType="password"
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          const pwd = passwords.find(p => p.id === confirmDeleteId);
+          if (pwd) {
+            deletePassword(pwd.id);
+            setSelectedId(passwords.length > 1 ? passwords.find(p => p.id !== pwd.id)?.id || null : null);
+            toast({ title: 'Password Deleted', type: 'info' });
+          }
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 };
