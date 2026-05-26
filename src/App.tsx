@@ -26,14 +26,13 @@ import { Settings } from './pages/Settings';
 import { MobileScanner } from './components/scanner/MobileScanner';
 
 export const App: React.FC = () => {
-  const { isAuthenticated, login, logout } = useVaultStore();
+  const { isAuthenticated, login, clearAuth } = useVaultStore();
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    // Check if there is already an active session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const u = session.user;
@@ -41,6 +40,7 @@ export const App: React.FC = () => {
           id: u.id,
           email: u.email!,
           fullName: u.user_metadata?.full_name || u.email!.split('@')[0],
+          avatarUrl: u.user_metadata?.avatar_url || undefined,
           securityScore: 100,
           totalStorageLimit: 15 * 1024 * 1024 * 1024,
           usedStorage: 0,
@@ -51,10 +51,22 @@ export const App: React.FC = () => {
       setAuthLoading(false);
     });
 
-    // Listen for future auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        logout();
+      if (event === 'SIGNED_IN' && session?.user) {
+        const u = session.user;
+        login({
+          id: u.id,
+          email: u.email!,
+          fullName: u.user_metadata?.full_name || u.email!.split('@')[0],
+          avatarUrl: u.user_metadata?.avatar_url || undefined,
+          securityScore: 100,
+          totalStorageLimit: 15 * 1024 * 1024 * 1024,
+          usedStorage: 0,
+          createdAt: u.created_at,
+          isPremium: true,
+        });
+      } else if (event === 'SIGNED_OUT') {
+        clearAuth();
       }
     });
 
@@ -91,13 +103,13 @@ export const App: React.FC = () => {
     <ToastProvider>
       <Router>
         <Routes>
-          <Route 
-            path="/" 
-            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />} 
+          <Route
+            path="/"
+            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />}
           />
-          <Route 
-            path="/auth" 
-            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />} 
+          <Route
+            path="/auth"
+            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />}
           />
 
           <Route

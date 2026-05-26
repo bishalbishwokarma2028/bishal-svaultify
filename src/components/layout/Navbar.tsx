@@ -9,7 +9,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenCommandPalette }) => {
-  const { user, logout, reminders } = useVaultStore();
+  const { user, logout, clearAuth, reminders } = useVaultStore();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');

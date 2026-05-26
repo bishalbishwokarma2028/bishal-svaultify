@@ -158,11 +158,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
       {/* User profile brief */}
       {!isCollapsed && user && (
         <div className="p-3 border-t border-white/5 flex items-center gap-3">
-          <img 
-            src={user.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'} 
-            alt={user.fullName} 
-            className="w-8 h-8 rounded-full object-cover ring-2 ring-blue-500/30"
-          />
+          {user.avatarUrl ? (
+            <img 
+              src={user.avatarUrl} 
+              alt={user.fullName} 
+              className="w-8 h-8 rounded-full object-cover ring-2 ring-blue-500/30 flex-shrink-0"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-indigo-500 flex items-center justify-center ring-2 ring-blue-500/20 flex-shrink-0">
+              <span className="text-white font-bold text-[11px]">
+                {user.fullName ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : user.email[0].toUpperCase()}
+              </span>
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-white truncate">{user.fullName}</p>
             <p className="text-[10px] text-gray-400 truncate">{user.email}</p>

@@ -32,6 +32,7 @@ interface VaultStore {
 
   login: (user: UserProfile) => void;
   logout: () => Promise<void>;
+  clearAuth: () => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
   
   createFolder: (name: string, parentId?: string | null, color?: string) => Promise<void>;
@@ -105,9 +106,12 @@ export const useVaultStore = create<VaultStore>()(
 
       logout: async () => {
         await supabase.auth.signOut();
-        set({ 
-          isAuthenticated: false, 
-          user: null, 
+      },
+
+      clearAuth: () => {
+        set({
+          isAuthenticated: false,
+          user: null,
           hiddenVaultUnlocked: false,
           folders: [],
           files: [],
@@ -117,7 +121,7 @@ export const useVaultStore = create<VaultStore>()(
           activityLogs: [],
           emergencyContacts: [],
           sharedLinks: [],
-          sessions: []
+          sessions: [],
         });
       },
 

@@ -1,80 +1,140 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   User, 
-  Database, 
   Bell, 
   Lock, 
   Trash2,
-  CheckCircle2,
+  ShieldCheck,
+  Camera,
   HelpCircle,
-  ShieldCheck
+  X
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
 
 export const Settings: React.FC = () => {
-  const { user, updateProfile, syncFromSupabase, logout } = useVaultStore();
+  const { user, updateProfile, logout } = useVaultStore();
   const { toast } = useToast();
 
-  const [activeSection, setActiveSection] = useState<'profile' | 'database' | 'storage' | 'notifications'>('profile');
-
+  const [activeSection, setActiveSection] = useState<'profile' | 'storage' | 'notifications'>('profile');
   const [fullName, setFullName] = useState(user?.fullName || '');
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatarUrl || null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [notifySms, setNotifySms] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyPush, setNotifyPush] = useState(true);
 
-  const handleProfileSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fullName.trim()) return;
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    const { error } = await supabase.auth.updateUser({
-      data: { full_name: fullName.trim() }
-    });
-
-    if (error) {
-      toast({ title: 'Update Failed', description: error.message, type: 'error' });
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Invalid File', description: 'Please select an image file.', type: 'error' });
       return;
     }
 
-    updateProfile({ fullName: fullName.trim() });
-    toast({ title: 'Profile Updated', type: 'success' });
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'File Too Large', description: 'Please choose an image under 5 MB.', type: 'error' });
+      return;
+    }
+
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setAvatarPreview(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleSync = async () => {
-    setIsSyncing(true);
-    toast({ title: 'Syncing data...', type: 'info' });
-    const success = await syncFromSupabase();
-    setIsSyncing(false);
-    if (success) {
-      toast({ title: 'Sync Complete', description: 'All your data has been refreshed from the database.', type: 'success' });
-    } else {
-      toast({ title: 'Sync Failed', description: 'Could not reach your database. Check your connection.', type: 'error' });
+  const removeAvatar = () => {
+    setAvatarPreview(null);
+    setAvatarFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const resizeImageToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX = 200;
+        let { width, height } = img;
+        if (width > height) {
+          if (width > MAX) { height = Math.round(height * MAX / width); width = MAX; }
+        } else {
+          if (height > MAX) { width = Math.round(width * MAX / height); height = MAX; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = url;
+    });
+  };
+
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName.trim()) return;
+    setIsSaving(true);
+
+    try {
+      let avatarUrl = user?.avatarUrl;
+
+      if (avatarFile) {
+        const base64 = await resizeImageToBase64(avatarFile);
+        avatarUrl = base64;
+      } else if (avatarPreview === null) {
+        avatarUrl = undefined;
+      }
+
+      const metaUpdate: Record<string, string | undefined> = {
+        full_name: fullName.trim(),
+        avatar_url: avatarUrl,
+      };
+
+      const { error } = await supabase.auth.updateUser({ data: metaUpdate });
+
+      if (error) {
+        toast({ title: 'Update Failed', description: error.message, type: 'error' });
+        return;
+      }
+
+      updateProfile({ fullName: fullName.trim(), avatarUrl });
+      setAvatarFile(null);
+      toast({ title: 'Profile Updated', type: 'success' });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Something went wrong.', type: 'error' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const clearAllClientData = async () => {
-    if (confirm('WARNING: This will sign you out and clear all locally cached data. Your data in Supabase is safe. Continue?')) {
+    if (confirm('This will sign you out and clear all locally cached data. Your Supabase data is safe. Continue?')) {
       localStorage.clear();
       sessionStorage.clear();
       await logout();
-      toast({ title: 'Local Data Cleared', type: 'info' });
     }
   };
 
-  const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-  const isConnected = !!supabaseUrl;
+  const initials = user?.fullName
+    ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : user?.email?.[0]?.toUpperCase() || '?';
 
   return (
     <div className="space-y-6 pb-12 select-none max-w-4xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Settings</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Manage your account and preferences.
-          </p>
+          <p className="text-xs text-gray-400 mt-0.5">Manage your account and preferences.</p>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-gray-500">
           <span>App Version:</span>
@@ -87,7 +147,6 @@ export const Settings: React.FC = () => {
         <div className="glass-panel rounded-2xl p-2 border border-white/10 space-y-1">
           {[
             { id: 'profile', label: 'User Profile', icon: User },
-            { id: 'database', label: 'Database Status', icon: Database },
             { id: 'storage', label: 'Storage', icon: Lock },
             { id: 'notifications', label: 'Notifications', icon: Bell },
           ].map(item => {
@@ -116,10 +175,56 @@ export const Settings: React.FC = () => {
             <div className="glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 space-y-6">
               <div>
                 <h3 className="text-base font-bold text-white">Your Profile</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Update your display name.</p>
+                <p className="text-xs text-gray-400 mt-0.5">Update your display name and profile photo.</p>
               </div>
 
-              <form onSubmit={handleProfileSubmit} className="space-y-4">
+              <form onSubmit={handleProfileSubmit} className="space-y-5">
+                {/* Avatar Upload */}
+                <div className="flex flex-col items-center gap-3">
+                  <div className="relative group">
+                    {avatarPreview ? (
+                      <img
+                        src={avatarPreview}
+                        alt="Profile"
+                        className="w-24 h-24 rounded-full object-cover ring-2 ring-blue-500/40 shadow-lg"
+                      />
+                    ) : (
+                      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-600 to-indigo-500 flex items-center justify-center ring-2 ring-blue-500/20 shadow-lg">
+                        <span className="text-white font-bold text-2xl">{initials}</span>
+                      </div>
+                    )}
+
+                    {avatarPreview && (
+                      <button
+                        type="button"
+                        onClick={removeAvatar}
+                        className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow-md transition-colors"
+                        title="Remove photo"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="hidden"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-gray-300 hover:text-white transition-all"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>{avatarPreview ? 'Change Photo' : 'Add Profile Photo'}</span>
+                  </button>
+                  <p className="text-[10px] text-gray-600">Accepts JPG, PNG, WEBP — max 5 MB</p>
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-gray-300">Full Name</label>
                   <input
@@ -153,73 +258,20 @@ export const Settings: React.FC = () => {
                 <div className="flex justify-end pt-2">
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold glow-blue"
+                    disabled={isSaving}
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold glow-blue disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
                   >
-                    Save Profile
+                    {isSaving ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>Save Profile</span>
+                    )}
                   </button>
                 </div>
               </form>
-            </div>
-          )}
-
-          {/* DATABASE STATUS */}
-          {activeSection === 'database' && (
-            <div className="glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 space-y-6">
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-white">Database Connection</h3>
-                  {isConnected && (
-                    <span className="flex items-center gap-1 text-xs text-emerald-400 font-bold">
-                      <CheckCircle2 className="w-4 h-4" /> Connected
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                  Your Vaultify is connected to your personal Supabase project. All data is saved securely to your own database.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-300">Project URL</span>
-                    <span className="text-[10px] font-mono text-emerald-400">
-                      {supabaseUrl ? supabaseUrl.replace('https://', '').split('.')[0] + '.supabase.co' : 'Not configured'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-300">Auth Provider</span>
-                    <span className="text-[10px] font-mono text-blue-400">Email / Password</span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-300">Row Level Security</span>
-                    <span className="text-[10px] font-mono text-emerald-400">Enabled</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-2">
-                <span className="text-xs font-bold text-blue-400 block">First Time Setup</span>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  If your tables don't exist yet, open your Supabase dashboard → SQL Editor and run the contents of <code className="text-white bg-white/10 px-1 rounded">supabase-schema.sql</code> from this project.
-                </p>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={handleSync}
-                  disabled={isSyncing}
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold glow-blue flex items-center gap-1.5 disabled:opacity-60"
-                >
-                  {isSyncing ? 'Syncing...' : 'Sync Data Now'}
-                </button>
-              </div>
             </div>
           )}
 
