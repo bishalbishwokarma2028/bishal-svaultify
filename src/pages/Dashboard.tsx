@@ -115,42 +115,45 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8 pb-12">
       {/* Top bar greeting & customization */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              My Dashboard
-            </h1>
-            <span className="bg-blue-500/10 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-500/20 uppercase tracking-widest">
-              Secure Mode
-            </span>
-            {isPremium && (
-              <span className="bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-500/20 uppercase tracking-widest flex items-center gap-1">
-                <Crown className="w-3 h-3" /> Premium
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight">
+                My Dashboard
+              </h1>
+              <span className="bg-blue-500/10 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-500/20 uppercase tracking-widest">
+                Secure
               </span>
-            )}
+              {isPremium && (
+                <span className="bg-amber-500/10 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-500/20 uppercase tracking-widest flex items-center gap-1">
+                  <Crown className="w-3 h-3" /> Premium
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">
+              Your private digital vault. All data stored securely on your device.
+            </p>
           </div>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Your private digital vault. All data stored securely on your device.
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2.5">
           <button
             onClick={() => setIsCustomizing(!isCustomizing)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 ${
-              isCustomizing 
-                ? 'bg-blue-600 border-blue-500 text-white glow-blue' 
+            className={`p-2 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 flex-shrink-0 ${
+              isCustomizing
+                ? 'bg-blue-600 border-blue-500 text-white'
                 : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-gray-300'
             }`}
+            title="Customize Dashboard"
           >
-            <Sliders className="w-3.5 h-3.5" />
-            <span>Customize</span>
+            <Sliders className="w-4 h-4" />
+            <span className="hidden sm:inline">Customize</span>
           </button>
+        </div>
 
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setShowCreateFolder(true)}
-            className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-gray-300 transition-all flex items-center gap-1"
+            className="flex-1 sm:flex-none px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-gray-300 transition-all flex items-center justify-center gap-1.5"
           >
             <FolderPlus className="w-3.5 h-3.5" />
             <span>New Folder</span>
@@ -158,7 +161,7 @@ export const Dashboard: React.FC = () => {
 
           <button
             onClick={() => setShowQuickUpload(true)}
-            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-lg glow-blue flex items-center gap-1.5"
+            className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-1.5"
           >
             <Upload className="w-3.5 h-3.5" />
             <span>Upload File</span>
@@ -211,7 +214,7 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <motion.div 
           whileHover={{ y: -3 }}
           onClick={() => navigate('/vault')}

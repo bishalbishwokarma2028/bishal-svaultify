@@ -7,7 +7,7 @@ import { supabase } from './lib/supabase';
 
 import { Sidebar } from './components/layout/Sidebar';
 import { Navbar } from './components/layout/Navbar';
-import { MobileNav } from './components/layout/MobileNav';
+import { MobileDrawer } from './components/layout/MobileDrawer';
 import { CommandPalette } from './components/command/CommandPalette';
 import { InstallPromptModal } from './components/pwa/InstallPromptModal';
 import { StorageConsentModal } from './components/ui/StorageConsentModal';
@@ -188,9 +188,12 @@ export const App: React.FC = () => {
                   <Sidebar onQuickUpload={() => {}} />
 
                   <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-                    <Navbar onOpenCommandPalette={() => setShowCommandPalette(true)} />
+                    <Navbar
+                      onOpenCommandPalette={() => setShowCommandPalette(true)}
+                      onOpenMenu={() => setMobileMenuOpen(true)}
+                    />
 
-                    <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20 md:pb-8">
+                    <main className="flex-1 overflow-y-auto px-3 sm:px-5 lg:px-8 pt-4 md:pt-6 pb-6">
                       <Routes>
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/vault" element={<Vault />} />
@@ -205,24 +208,13 @@ export const App: React.FC = () => {
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
                       </Routes>
                     </main>
-
-                    <MobileNav onOpenMenu={() => setMobileMenuOpen(true)} />
                   </div>
 
-                  {mobileMenuOpen && (
-                    <div className="fixed inset-0 z-50 md:hidden flex">
-                      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
-                      <div className="relative w-64 max-w-xs bg-slate-950 h-full z-10 flex flex-col border-r border-white/10 shadow-2xl">
-                        <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                          <span className="text-xs font-bold text-white tracking-wider">VAULTIFY MENU</span>
-                          <button onClick={() => setMobileMenuOpen(false)} className="text-gray-400 hover:text-white">✕</button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto" onClick={() => setMobileMenuOpen(false)}>
-                          <Sidebar />
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <MobileDrawer
+                    isOpen={mobileMenuOpen}
+                    onClose={() => setMobileMenuOpen(false)}
+                    onQuickUpload={() => {}}
+                  />
 
                   <CommandPalette
                     isOpen={showCommandPalette}
