@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   KeyRound, 
@@ -259,6 +259,16 @@ export const Passwords: React.FC = () => {
     passwords.filter(p => matchesGroup(p, activeGroupDef)),
     [passwords, selectedGroup]
   );
+
+  // When group changes, auto-select first password in that group
+  useEffect(() => {
+    const first = groupFilteredPasswords[0];
+    if (first) {
+      setSelectedId(first.id);
+    } else {
+      setSelectedId(null);
+    }
+  }, [selectedGroup]);
 
   const groupCounts = useMemo(() => {
     const counts: Record<string, number> = {};

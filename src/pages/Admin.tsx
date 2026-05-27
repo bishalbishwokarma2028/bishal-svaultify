@@ -25,6 +25,9 @@ import {
   ToggleRight,
   UserCheck,
   UserX,
+  Sun,
+  Moon,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   getAllRequests,
@@ -54,6 +57,13 @@ export const Admin: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [adminTheme, setAdminTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('vaultify-admin-theme') as 'dark' | 'light') || 'dark');
+
+  const toggleAdminTheme = () => {
+    const next = adminTheme === 'dark' ? 'light' : 'dark';
+    setAdminTheme(next);
+    localStorage.setItem('vaultify-admin-theme', next);
+  };
   const [requests, setRequests] = useState<PremiumRequest[]>([]);
   const [approvedEmails, setApprovedEmails] = useState<string[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
@@ -278,23 +288,30 @@ export const Admin: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#030712] text-gray-100">
+    <div className={`min-h-screen text-gray-100 ${adminTheme === 'light' ? 'bg-slate-100' : 'bg-[#030712]'}`} data-admin-theme={adminTheme}>
       {/* Header */}
-      <div className="border-b border-white/10 bg-slate-900/60 backdrop-blur-xl sticky top-0 z-20">
+      <div className={`border-b backdrop-blur-xl sticky top-0 z-20 ${adminTheme === 'light' ? 'bg-white/90 border-slate-200' : 'bg-slate-900/60 border-white/10'}`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center">
               <ShieldCheck className="w-5 h-5 text-white" />
             </div>
             <div>
-              <span className="font-bold text-white text-sm tracking-wide">VAULTIFY ADMIN</span>
-              <p className="text-[10px] text-gray-500">Control Panel v{APP_VERSION}</p>
+              <span className={`font-bold text-sm tracking-wide ${adminTheme === 'light' ? 'text-slate-800' : 'text-white'}`}>VAULTIFY ADMIN</span>
+              <p className={`text-[10px] ${adminTheme === 'light' ? 'text-slate-500' : 'text-gray-500'}`}>Control Panel v{APP_VERSION}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <button
+              onClick={toggleAdminTheme}
+              className={`p-2 rounded-xl transition-colors ${adminTheme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-600' : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'}`}
+              title="Toggle theme"
+            >
+              {adminTheme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            </button>
+            <button
               onClick={loadData}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+              className={`p-2 rounded-xl transition-colors ${adminTheme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-600' : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'}`}
               title="Refresh data"
             >
               <RefreshCw className="w-4 h-4" />
@@ -310,7 +327,7 @@ export const Admin: React.FC = () => {
         </div>
 
         {/* Tabs */}
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto pb-0 no-scrollbar border-t border-white/5">
+        <div className={`max-w-6xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto pb-0 no-scrollbar border-t ${adminTheme === 'light' ? 'border-slate-200' : 'border-white/5'}`}>
           {TABS.map(tab => {
             const Icon = tab.icon;
             return (
@@ -319,7 +336,9 @@ export const Admin: React.FC = () => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold transition-all whitespace-nowrap relative border-b-2 ${
                   activeTab === tab.id
-                    ? 'text-blue-400 border-blue-500'
+                    ? 'text-blue-500 border-blue-500'
+                    : adminTheme === 'light'
+                    ? 'text-slate-500 border-transparent hover:text-slate-700'
                     : 'text-gray-500 border-transparent hover:text-gray-300'
                 }`}
               >
@@ -439,23 +458,44 @@ export const Admin: React.FC = () => {
                         </div>
                       </div>
                       {expandedReq === req.id && (
-                        <div className="px-5 pb-4 grid grid-cols-2 sm:grid-cols-3 gap-4 text-[11px]">
-                          <div>
-                            <p className="text-gray-500 mb-0.5">User ID</p>
-                            <p className="text-white font-mono break-all">{req.userId || 'Local'}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500 mb-0.5">Transaction ID</p>
-                            <p className="text-white font-mono">{req.transactionId}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500 mb-0.5">Submitted At</p>
-                            <p className="text-white">{new Date(req.submittedAt).toLocaleString()}</p>
-                          </div>
-                          {req.reviewedAt && (
+                        <div className="px-5 pb-5 space-y-4 text-[11px]">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                             <div>
-                              <p className="text-gray-500 mb-0.5">Reviewed At</p>
-                              <p className="text-white">{new Date(req.reviewedAt).toLocaleString()}</p>
+                              <p className="text-gray-500 mb-0.5">User ID</p>
+                              <p className="text-white font-mono break-all">{req.userId || 'Local'}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 mb-0.5">Reference ID</p>
+                              <p className="text-white font-mono">{req.transactionId}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 mb-0.5">Submitted At</p>
+                              <p className="text-white">{new Date(req.submittedAt).toLocaleString()}</p>
+                            </div>
+                            {req.reviewedAt && (
+                              <div>
+                                <p className="text-gray-500 mb-0.5">Reviewed At</p>
+                                <p className="text-white">{new Date(req.reviewedAt).toLocaleString()}</p>
+                              </div>
+                            )}
+                          </div>
+                          {req.screenshotBase64 ? (
+                            <div className="space-y-2">
+                              <p className="text-gray-500 flex items-center gap-1.5">
+                                <ImageIcon className="w-3 h-3" />
+                                Transaction Screenshot
+                              </p>
+                              <div className="rounded-xl overflow-hidden border border-white/10 max-w-sm">
+                                <img
+                                  src={req.screenshotBase64}
+                                  alt="Transaction Screenshot"
+                                  className="w-full h-auto object-contain max-h-72"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/15 text-amber-400/70 text-[10px]">
+                              No screenshot submitted with this request.
                             </div>
                           )}
                         </div>

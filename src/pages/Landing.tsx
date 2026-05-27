@@ -173,7 +173,7 @@ export const Landing: React.FC = () => {
               onClick={() => navigate('/auth')}
               className="w-full sm:w-auto px-8 py-4 rounded-xl bg-white/[0.05] hover:bg-white/[0.08] text-white font-semibold text-base border border-white/10 transition-all backdrop-blur-md"
             >
-              Connect Your Supabase
+              Learn More
             </button>
           </motion.div>
 

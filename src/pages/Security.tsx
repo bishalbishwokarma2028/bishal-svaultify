@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShieldCheck, 
   Smartphone, 
@@ -68,11 +69,16 @@ export const Security: React.FC = () => {
     }
   };
 
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   const handleClearLogs = () => {
-    if (confirm('Clear all activity logs? This cannot be undone.')) {
-      clearActivityLogs();
-      toast({ title: 'Activity Logs Cleared', type: 'info' });
-    }
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearLogs = () => {
+    clearActivityLogs();
+    setShowClearConfirm(false);
+    toast({ title: 'Activity Logs Cleared', type: 'info' });
   };
 
   const getActionColor = (action: string) => {
@@ -558,6 +564,44 @@ export const Security: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Clear All Confirmation Modal */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className="w-full max-w-sm bg-slate-900 rounded-3xl border border-white/10 shadow-2xl p-6 space-y-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400">
+                  <Trash className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Clear History</h3>
+                  <p className="text-[11px] text-gray-400 mt-0.5">This action cannot be undone.</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-300">Do you want to Clear all the History?</p>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowClearConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmClearLogs}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all"
+                >
+                  Yes, Clear All
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

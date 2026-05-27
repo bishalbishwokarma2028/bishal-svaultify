@@ -28,7 +28,8 @@ interface VaultStore {
   isPremium: boolean;
   paymentStatus: 'none' | 'pending' | 'approved';
   premiumTransactionId: string;
-  submitPremiumPayment: (txId: string) => void;
+  premiumScreenshot: string;
+  submitPremiumPayment: (screenshot?: string) => void;
   approvePayment: () => void;
   syncPremiumFromGlobal: () => void;
   dataOwnerId: string | null;
@@ -96,19 +97,22 @@ export const useVaultStore = create<VaultStore>()(
       paymentStatus: 'none',
       premiumTransactionId: '',
       dataOwnerId: null,
-      submitPremiumPayment: (txId) => {
+      premiumScreenshot: '',
+      submitPremiumPayment: (screenshot) => {
         const user = get().user;
+        const txId = 'SCR-' + Date.now();
         if (user) {
           saveRequest({
             id: genId(),
             email: user.email,
             userId: user.id,
             transactionId: txId,
+            screenshotBase64: screenshot,
             status: 'pending',
             submittedAt: new Date().toISOString(),
           });
         }
-        set({ paymentStatus: 'pending', premiumTransactionId: txId });
+        set({ paymentStatus: 'pending', premiumTransactionId: txId, premiumScreenshot: screenshot || '' });
       },
       approvePayment: () => {
         set({ paymentStatus: 'approved', isPremium: true });

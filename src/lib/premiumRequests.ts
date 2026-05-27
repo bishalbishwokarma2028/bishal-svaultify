@@ -8,6 +8,7 @@ export interface PremiumRequest {
   email: string;
   userId: string;
   transactionId: string;
+  screenshotBase64?: string;
   status: 'pending' | 'approved' | 'rejected';
   submittedAt: string;
   reviewedAt?: string;
