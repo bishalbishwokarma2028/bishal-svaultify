@@ -301,16 +301,21 @@ export const useVaultStore = create<VaultStore>()(
           try {
             const { data, error } = await supabase.from('files').insert([{
               name: fileData.name, size: fileData.size, type: fileData.type,
-              url: fileUrl, // Store local URL reference so sync can find content
+              url: fileUrl,
+              content: fileContent || null,
               folder_id: fileData.folderId, category: fileData.category,
               tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
               expiry_date: fileData.expiryDate || null, user_id: userId,
             }]).select().single();
             if (!error && data) {
+              const newUrl = fileContent ? `${LOCAL_FILE_PREFIX}${data.id}` : fileUrl;
+              // Migrate IndexedDB content from localId to Supabase ID
+              if (fileContent) {
+                await storeFileContent(data.id, fileContent).catch(() => {});
+                await deleteFileContent(localId).catch(() => {});
+              }
               set((state) => ({
-                files: state.files.map(f => f.id === localId ? {
-                  ...f, id: data.id
-                } : f)
+                files: state.files.map(f => f.id === localId ? { ...f, id: data.id, url: newUrl } : f)
               }));
             }
           } catch { /* keep local */ }
@@ -710,16 +715,25 @@ export const useVaultStore = create<VaultStore>()(
           }));
 
           let totalUsed = 0;
-          const sbFiles: FileItem[] = (filesRes.data || []).map((f: any) => {
+          const sbFiles: FileItem[] = await Promise.all((filesRes.data || []).map(async (f: any) => {
             totalUsed += Number(f.size || 0);
+            // Restore file content to this device's IndexedDB if not already present
+            if (f.content) {
+              const existing = await import('../lib/localDB').then(m => m.getFileContent(f.id));
+              if (!existing) {
+                await storeFileContent(f.id, f.content).catch(() => {});
+              }
+            }
             return {
               id: f.id, name: f.name, size: Number(f.size || 0),
-              type: f.type, url: f.url || '', folderId: f.folder_id,
+              type: f.type,
+              url: f.content ? `${LOCAL_FILE_PREFIX}${f.id}` : (f.url || ''),
+              folderId: f.folder_id,
               category: f.category, tags: f.tags || [],
               isStarred: f.is_starred, isArchived: f.is_archived,
               createdAt: f.created_at, updatedAt: f.updated_at, expiryDate: f.expiry_date
             };
-          });
+          }));
 
           const sbPasswords: PasswordItem[] = (pwdRes.data || []).map((p: any) => ({
             id: p.id, title: p.title, username: p.username || '',

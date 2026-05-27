@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.files (
     size BIGINT NOT NULL,
     type TEXT NOT NULL,
     url TEXT NOT NULL,
+    content TEXT,
     folder_id UUID REFERENCES public.folders(id) ON DELETE SET NULL,
     category TEXT NOT NULL DEFAULT 'Personal IDs',
     tags TEXT[] DEFAULT '{}',
