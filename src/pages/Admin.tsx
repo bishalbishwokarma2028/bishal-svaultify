@@ -28,6 +28,9 @@ import {
   Sun,
   Moon,
   Image as ImageIcon,
+  MessageSquare,
+  Send,
+  DollarSign,
 } from 'lucide-react';
 import {
   getAllRequests,
@@ -42,6 +45,15 @@ import {
   PremiumRequest,
   RegisteredUser,
 } from '../lib/premiumRequests';
+import {
+  getAllConversations,
+  sendAdminReply,
+  markAdminRead,
+  getUnreadAdminTotal,
+  getSubscriptionPrice,
+  setSubscriptionPrice,
+  Conversation,
+} from '../lib/supportChat';
 
 const ADMIN_EMAIL = 'bishalbishwokarma2028@gmail.com';
 const ADMIN_PASSWORD = 'bishal@ado@9802485583';
@@ -49,7 +61,7 @@ const ADMIN_PASSWORD = 'bishal@ado@9802485583';
 const APP_VERSION = '2.1.0';
 const FREE_LIMIT_GB = 5;
 
-type AdminTab = 'requests' | 'users' | 'stats' | 'settings' | 'announce';
+type AdminTab = 'requests' | 'users' | 'stats' | 'settings' | 'announce' | 'messages';
 
 export const Admin: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => getAdminSession());
@@ -78,14 +90,37 @@ export const Admin: React.FC = () => {
   const [expandedReq, setExpandedReq] = useState<string | null>(null);
   const [userSearch, setUserSearch] = useState('');
 
+  // Messages state
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConvEmail, setSelectedConvEmail] = useState<string | null>(null);
+  const [adminReplyInput, setAdminReplyInput] = useState('');
+  const [messagesUnread, setMessagesUnread] = useState(0);
+  const adminChatEndRef = React.useRef<HTMLDivElement>(null);
+
+  // Subscription price state
+  const [priceInput, setPriceInput] = useState(() => String(getSubscriptionPrice()));
+  const [priceSaved, setPriceSaved] = useState(false);
+
   const loadData = () => {
     setRequests(getAllRequests());
     setApprovedEmails(getApprovedEmails());
     setRegisteredUsers(getUsersRegistry());
   };
 
+  const loadMessages = () => {
+    setConversations(getAllConversations());
+    setMessagesUnread(getUnreadAdminTotal());
+  };
+
   useEffect(() => {
-    if (isLoggedIn) loadData();
+    if (isLoggedIn) { loadData(); loadMessages(); }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      const interval = setInterval(loadMessages, 3000);
+      return () => clearInterval(interval);
+    }
   }, [isLoggedIn]);
 
   useEffect(() => {
@@ -96,6 +131,31 @@ export const Admin: React.FC = () => {
       if (savedLimit) setFreeLimit(Number(savedLimit));
     }
   }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (activeTab === 'messages' && selectedConvEmail) {
+      markAdminRead(selectedConvEmail);
+      loadMessages();
+    }
+    adminChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activeTab, selectedConvEmail, conversations]);
+
+  const handleSavePrice = () => {
+    const p = Number(priceInput);
+    if (!p || p < 1) return;
+    setSubscriptionPrice(p);
+    setPriceSaved(true);
+    setTimeout(() => setPriceSaved(false), 2000);
+    flash(`Subscription price updated to Rs.${p}`);
+  };
+
+  const handleAdminSendReply = () => {
+    if (!adminReplyInput.trim() || !selectedConvEmail) return;
+    sendAdminReply(selectedConvEmail, adminReplyInput.trim());
+    setAdminReplyInput('');
+    loadMessages();
+    setTimeout(() => adminChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,6 +256,7 @@ export const Admin: React.FC = () => {
   const TABS: { id: AdminTab; label: string; icon: React.ElementType; badge?: number }[] = [
     { id: 'requests', label: 'Requests', icon: Crown, badge: counts.pending },
     { id: 'users', label: 'All Users', icon: Users, badge: registeredUsers.length },
+    { id: 'messages', label: 'Messages', icon: MessageSquare, badge: messagesUnread },
     { id: 'stats', label: 'Statistics', icon: BarChart3 },
     { id: 'announce', label: 'Announce', icon: Bell },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -795,9 +856,132 @@ export const Admin: React.FC = () => {
           </div>
         )}
 
+        {/* ── MESSAGES TAB ── */}
+        {activeTab === 'messages' && (
+          <div className="flex gap-4 h-[520px]">
+            {/* Conversation list */}
+            <div className="w-64 flex-shrink-0 flex flex-col bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-white/10 flex-shrink-0">
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-blue-400" />
+                  Conversations
+                </h2>
+                <p className="text-[10px] text-gray-500 mt-0.5">{conversations.length} user{conversations.length !== 1 ? 's' : ''}</p>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {conversations.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-gray-500 mt-8">No messages yet.</div>
+                ) : (
+                  conversations.map(conv => (
+                    <button
+                      key={conv.email}
+                      onClick={() => { setSelectedConvEmail(conv.email); markAdminRead(conv.email); loadMessages(); }}
+                      className={`w-full px-4 py-3 border-b border-white/5 text-left transition-all hover:bg-white/5 ${selectedConvEmail === conv.email ? 'bg-blue-600/15 border-l-2 border-l-blue-500' : ''}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold text-white truncate">{conv.email.split('@')[0]}</p>
+                        {conv.unreadCount > 0 && (
+                          <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">{conv.unreadCount}</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                        {conv.lastMessage?.message || ''}
+                      </p>
+                      <p className="text-[9px] text-gray-600 mt-0.5">
+                        {conv.lastMessage ? new Date(conv.lastMessage.createdAt).toLocaleDateString() : ''}
+                      </p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Chat window */}
+            <div className="flex-1 flex flex-col bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden">
+              {!selectedConvEmail ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-6">
+                  <MessageSquare className="w-8 h-8 text-gray-600" />
+                  <p className="text-sm text-gray-500">Select a conversation to view messages</p>
+                </div>
+              ) : (
+                <>
+                  <div className="px-4 py-3 border-b border-white/10 flex-shrink-0">
+                    <p className="text-xs font-bold text-white">{selectedConvEmail}</p>
+                    <p className="text-[10px] text-gray-500">{(conversations.find(c => c.email === selectedConvEmail)?.messages.length || 0)} messages</p>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                    {(conversations.find(c => c.email === selectedConvEmail)?.messages || []).map(msg => (
+                      <div key={msg.id} className={`flex ${msg.isFromAdmin ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
+                          msg.isFromAdmin
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-tr-sm'
+                            : 'bg-slate-800 border border-white/10 text-gray-200 rounded-tl-sm'
+                        }`}>
+                          {!msg.isFromAdmin && (
+                            <p className="text-[9px] font-bold text-gray-400 mb-0.5 uppercase tracking-wider">User</p>
+                          )}
+                          <p>{msg.message}</p>
+                          <p className={`text-[9px] mt-1 ${msg.isFromAdmin ? 'text-white/60' : 'text-gray-500'}`}>
+                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={adminChatEndRef} />
+                  </div>
+                  <div className="px-4 py-3 border-t border-white/10 flex items-center gap-2 flex-shrink-0">
+                    <input
+                      type="text"
+                      value={adminReplyInput}
+                      onChange={e => setAdminReplyInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAdminSendReply()}
+                      placeholder="Reply to user..."
+                      className="flex-1 bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none placeholder:text-gray-500"
+                    />
+                    <button
+                      onClick={handleAdminSendReply}
+                      disabled={!adminReplyInput.trim()}
+                      className="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all flex-shrink-0"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── SETTINGS TAB ── */}
         {activeTab === 'settings' && (
           <div className="space-y-4">
+            {/* Subscription Price */}
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-4">
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-amber-400" />
+                Subscription Price
+              </h2>
+              <p className="text-xs text-gray-400">Change the premium subscription price. It updates in real time for all users.</p>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-400 font-semibold">Rs.</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={priceInput}
+                  onChange={e => setPriceInput(e.target.value)}
+                  className="w-32 bg-white/[0.04] text-white text-sm rounded-xl px-3 py-2 border border-white/10 focus:border-amber-500 outline-none"
+                />
+                <span className="text-xs text-gray-500">lifetime access</span>
+              </div>
+              <button
+                onClick={handleSavePrice}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                {priceSaved ? 'Price Updated!' : 'Update Price for All Users'}
+              </button>
+            </div>
+
             <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-4">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <Settings className="w-4 h-4 text-blue-400" />

@@ -19,16 +19,26 @@ import {
   Fingerprint,
   Upload,
   Image as ImageIcon,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import { useVaultStore, FREE_STORAGE_LIMIT } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
+import {
+  getMessagesForUser,
+  sendUserMessage,
+  markUserMessagesRead,
+  getUnreadForUser,
+  getSubscriptionPrice,
+  SupportMessage,
+} from '../lib/supportChat';
 
 export const Settings: React.FC = () => {
   const { user, files, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment } = useVaultStore();
   const { toast } = useToast();
 
-  const [activeSection, setActiveSection] = useState<'profile' | 'storage' | 'notifications' | 'security'>('profile');
+  const [activeSection, setActiveSection] = useState<'profile' | 'storage' | 'notifications' | 'security' | 'support'>('profile');
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatarUrl || null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -52,12 +62,61 @@ export const Settings: React.FC = () => {
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricEnrolling, setBiometricEnrolling] = useState(false);
 
+  // Support chat state
+  const [chatMessages, setChatMessages] = useState<SupportMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatUnread, setChatUnread] = useState(0);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [subscriptionPrice, setSubscriptionPriceState] = useState(getSubscriptionPrice);
+
   useEffect(() => {
     setBiometricSupported(
       window.PublicKeyCredential !== undefined ||
       /android|iphone|ipad|ipod/i.test(navigator.userAgent)
     );
   }, []);
+
+  useEffect(() => {
+    if (user?.email) {
+      const load = () => {
+        setChatMessages(getMessagesForUser(user.email!));
+        setChatUnread(getUnreadForUser(user.email!));
+      };
+      load();
+      window.addEventListener('storage', load);
+      window.addEventListener('vaultify-chat-updated' as any, load);
+      return () => {
+        window.removeEventListener('storage', load);
+        window.removeEventListener('vaultify-chat-updated' as any, load);
+      };
+    }
+  }, [user?.email]);
+
+  useEffect(() => {
+    if (activeSection === 'support' && user?.email) {
+      markUserMessagesRead(user.email);
+      setChatUnread(0);
+    }
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activeSection, chatMessages]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'vaultify-subscription-price') {
+        setSubscriptionPriceState(getSubscriptionPrice());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const handleSendChat = () => {
+    if (!chatInput.trim() || !user?.email) return;
+    sendUserMessage(user.email, user.id, chatInput.trim());
+    setChatMessages(getMessagesForUser(user.email));
+    setChatInput('');
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
 
   // Storage stats
   const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
@@ -248,6 +307,7 @@ export const Settings: React.FC = () => {
             { id: 'storage', label: 'Storage & Plans', icon: HardDrive },
             { id: 'notifications', label: 'Notifications', icon: Bell },
             { id: 'security', label: 'Security', icon: Fingerprint },
+            { id: 'support', label: 'Help & Support', icon: MessageSquare, badge: chatUnread },
           ].map(item => {
             const Icon = item.icon;
             const isActive = activeSection === (item.id as any);
@@ -262,7 +322,12 @@ export const Settings: React.FC = () => {
                 }`}
               >
                 <Icon className="w-4 h-4" />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {(item as any).badge > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-black flex items-center justify-center">
+                    {(item as any).badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -398,7 +463,7 @@ export const Settings: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-white">Upgrade to Premium</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">Unlock unlimited storage forever for just Rs.300</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Unlock unlimited storage forever for just Rs.{subscriptionPrice}</p>
                     </div>
                   </div>
 
@@ -406,7 +471,7 @@ export const Settings: React.FC = () => {
                     {[
                       { icon: HardDrive, label: 'Unlimited Storage', desc: 'Only limited by your device' },
                       { icon: Crown, label: 'One-time Payment', desc: 'Pay once, use forever' },
-                      { icon: Lock, label: 'No Subscriptions', desc: 'Rs.300 lifetime access' },
+                      { icon: Lock, label: 'No Subscriptions', desc: `Rs.${subscriptionPrice} lifetime access` },
                       { icon: ShieldCheck, label: 'All Features', desc: 'Full vault access' },
                     ].map((f, i) => {
                       const Icon = f.icon;
@@ -436,7 +501,7 @@ export const Settings: React.FC = () => {
                       className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-lg"
                     >
                       <Crown className="w-4 h-4" />
-                      <span>Unlock Now — Rs.300 Lifetime</span>
+                      <span>Unlock Now — Rs.{subscriptionPrice} Lifetime</span>
                     </button>
                   )}
                 </div>
@@ -572,6 +637,79 @@ export const Settings: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* SUPPORT / CHAT */}
+          {activeSection === 'support' && (
+            <div className="glass-panel-premium rounded-3xl border border-white/10 overflow-hidden flex flex-col" style={{ height: 520 }}>
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-white/10 bg-gradient-to-r from-blue-950/40 to-slate-900 flex items-center gap-3 flex-shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Chat with Creator</h3>
+                  <p className="text-[10px] text-gray-400">Send a message — Bishal (admin) will reply here.</p>
+                </div>
+                <div className="ml-auto flex items-center gap-1.5 text-[10px] text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Online
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+                {chatMessages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                      <MessageSquare className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white">Start a conversation</p>
+                      <p className="text-[11px] text-gray-400 mt-1">Ask anything — billing, features, or just say hi.</p>
+                    </div>
+                  </div>
+                ) : (
+                  chatMessages.map(msg => (
+                    <div key={msg.id} className={`flex ${msg.isFromAdmin ? 'justify-start' : 'justify-end'}`}>
+                      <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
+                        msg.isFromAdmin
+                          ? 'bg-slate-800 border border-white/10 text-gray-200 rounded-tl-sm'
+                          : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-tr-sm'
+                      }`}>
+                        {msg.isFromAdmin && (
+                          <p className="text-[9px] font-bold text-blue-400 mb-0.5 uppercase tracking-wider">Bishal</p>
+                        )}
+                        <p>{msg.message}</p>
+                        <p className={`text-[9px] mt-1 ${msg.isFromAdmin ? 'text-gray-500' : 'text-white/60'}`}>
+                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Input */}
+              <div className="px-4 py-3 border-t border-white/10 flex items-center gap-2 flex-shrink-0">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSendChat()}
+                  placeholder="Type your message..."
+                  className="flex-1 bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-blue-500 outline-none placeholder:text-gray-500"
+                />
+                <button
+                  onClick={handleSendChat}
+                  disabled={!chatInput.trim()}
+                  className="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all flex-shrink-0"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -601,7 +739,7 @@ export const Settings: React.FC = () => {
                   <>
                     {/* Price Banner */}
                     <div className="text-center">
-                      <p className="text-2xl font-black text-white">Rs.300</p>
+                      <p className="text-2xl font-black text-white">Rs.{subscriptionPrice}</p>
                       <p className="text-xs text-gray-400">One-time payment · Lifetime unlimited storage</p>
                     </div>
 
@@ -623,7 +761,7 @@ export const Settings: React.FC = () => {
                           <p className="text-[10px] text-gray-500">QR code image not found.</p>
                         </div>
                       </div>
-                      <p className="text-[11px] text-gray-400 text-center">Scan to pay Rs.300 · Siddhartha Bank</p>
+                      <p className="text-[11px] text-gray-400 text-center">Scan to pay Rs.{subscriptionPrice} · Siddhartha Bank</p>
                     </div>
 
                     {/* Screenshot Upload */}

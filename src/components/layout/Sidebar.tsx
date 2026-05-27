@@ -60,6 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
             </div>
             <div>
               <span className="font-bold tracking-wider text-white text-base">VAULTIFY</span>
+              <p className="text-[9px] text-gray-500 leading-none mt-0.5">Built By Bishal</p>
             </div>
           </div>
         )}
