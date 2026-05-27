@@ -5,6 +5,7 @@ import { ShieldCheck, Lock, Mail, Key, ArrowRight, Eye, EyeOff } from 'lucide-re
 import { supabase } from '../lib/supabase';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
+import { registerUser, setAdminSession } from '../lib/premiumRequests';
 
 export const Auth: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
@@ -19,15 +20,10 @@ export const Auth: React.FC = () => {
   const { toast } = useToast();
 
   const ADMIN_EMAIL = 'bishalbishwokarma2028@gmail.com';
+  const ADMIN_PASSWORD = 'bishal@ado@9802485583';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Admin credentials → redirect to admin panel instead of Supabase auth
-    if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-      navigate('/admin');
-      return;
-    }
 
     if (!email || !email.includes('@')) {
       toast({ title: 'Invalid Email', description: 'Please enter a valid email address.', type: 'error' });
@@ -37,6 +33,19 @@ export const Auth: React.FC = () => {
     if (mode !== 'forgot' && password.length < 6) {
       toast({ title: 'Password Too Short', description: 'Password must be at least 6 characters.', type: 'error' });
       return;
+    }
+
+    // Admin credentials → validate and redirect directly without double sign-in
+    if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      if (mode !== 'forgot' && password.trim() === ADMIN_PASSWORD) {
+        setAdminSession();
+        toast({ title: 'Admin Access Granted', description: 'Welcome to the Admin Panel.', type: 'success' });
+        navigate('/admin');
+        return;
+      } else if (mode !== 'forgot') {
+        toast({ title: 'Invalid Admin Credentials', description: 'Check your admin email and password.', type: 'error' });
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -75,6 +84,7 @@ export const Auth: React.FC = () => {
             isPremium: true,
           };
           login(profile);
+          registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
           toast({ title: 'Account Created!', description: 'Welcome to your secure vault.', type: 'success' });
           navigate('/dashboard');
         }
@@ -94,6 +104,7 @@ export const Auth: React.FC = () => {
             isPremium: true,
           };
           login(profile);
+          registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
           toast({ title: 'Welcome back!', description: 'Your vault is ready.', type: 'success' });
           navigate('/dashboard');
         }

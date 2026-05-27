@@ -12,7 +12,9 @@ import {
   Italic, 
   List, 
   Link2, 
-  Tag
+  Tag,
+  Download,
+  Palette,
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
@@ -43,7 +45,31 @@ export const Notes: React.FC = () => {
   const [challengePin, setChallengePin] = useState('');
   const [unlockedNotes, setUnlockedNotes] = useState<string[]>([]);
 
-  const categories = ['All', 'Personal', 'Work', 'Finance', 'Ideas', 'Family'];
+  const categories = ['All', 'Personal', 'Work', 'Finance', 'Ideas', 'Family', 'Health', 'Travel', 'Goals'];
+
+  const CATEGORY_COLORS: Record<string, string> = {
+    Personal: 'text-blue-400 bg-blue-500/10',
+    Work: 'text-purple-400 bg-purple-500/10',
+    Finance: 'text-emerald-400 bg-emerald-500/10',
+    Ideas: 'text-amber-400 bg-amber-500/10',
+    Family: 'text-pink-400 bg-pink-500/10',
+    Health: 'text-rose-400 bg-rose-500/10',
+    Travel: 'text-cyan-400 bg-cyan-500/10',
+    Goals: 'text-indigo-400 bg-indigo-500/10',
+  };
+
+  const handleExportNote = () => {
+    if (!selectedNote) return;
+    const text = `${selectedNote.title}\n${'='.repeat(selectedNote.title.length)}\n\nCategory: ${selectedNote.category}\nDate: ${new Date(selectedNote.updatedAt).toLocaleDateString()}\n\n${selectedNote.content}`;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedNote.title.replace(/[^a-z0-9]/gi, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Note Exported', type: 'success' });
+  };
 
   const filteredNotes = useMemo(() => {
     return notes.filter(n => {
@@ -60,6 +86,11 @@ export const Notes: React.FC = () => {
   }, [notes, activeCategory, searchQuery]);
 
   const selectedNote = notes.find(n => n.id === selectedId) || null;
+
+  const wordCount = useMemo(() => {
+    if (!selectedNote) return 0;
+    return selectedNote.content.trim().split(/\s+/).filter(Boolean).length;
+  }, [selectedNote?.content]);
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,7 +281,7 @@ export const Notes: React.FC = () => {
                   </div>
 
                   <div className="mt-3 flex items-center justify-between text-[9px] text-gray-500">
-                    <span className="bg-white/5 px-1.5 py-0.2 rounded text-gray-400">
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${CATEGORY_COLORS[note.category] || 'bg-white/5 text-gray-400'}`}>
                       {note.category}
                     </span>
                     <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
@@ -293,9 +324,21 @@ export const Notes: React.FC = () => {
                   <button onClick={() => injectMarkup('[Link](https://)')} className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/10" title="Link"><Link2 className="w-3.5 h-3.5" /></button>
                 </div>
 
+                <span className="text-[9px] text-gray-600 hidden sm:block">
+                  {wordCount} {wordCount === 1 ? 'word' : 'words'}
+                </span>
+
+                <button
+                  onClick={handleExportNote}
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all"
+                  title="Export Note as .txt"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+
                 <button
                   onClick={() => setConfirmDeleteId(selectedNote.id)}
-                  className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all ml-auto"
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
                   title="Delete Note"
                 >
                   <Trash2 className="w-4 h-4" />

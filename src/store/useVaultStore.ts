@@ -68,6 +68,7 @@ interface VaultStore {
   deleteReminder: (id: string) => Promise<void>;
 
   logActivity: (action: ActivityLog['action'], details: string) => Promise<void>;
+  clearActivityLogs: () => void;
   setHiddenVaultPin: (pin: string) => void;
   unlockHiddenVault: (pin: string) => boolean;
   lockHiddenVault: () => void;
@@ -620,6 +621,10 @@ export const useVaultStore = create<VaultStore>()(
           } catch { /* keep local */ }
         }
         get().logActivity('emergency', `Added emergency contact: ${newContact.name}`);
+      },
+
+      clearActivityLogs: () => {
+        set({ activityLogs: [] });
       },
 
       triggerEmergencyAccess: () => {

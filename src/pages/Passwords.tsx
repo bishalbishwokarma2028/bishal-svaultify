@@ -11,7 +11,8 @@ import {
   Trash2, 
   ExternalLink, 
   Fingerprint,
-  Pencil
+  Pencil,
+  LayoutGrid,
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { PasswordItem } from '../types';
@@ -58,6 +59,35 @@ const SERVICE_ICONS: Record<string, string> = {
   'Zoom': '📹', 'Slack': '💬', 'Dropbox': '📁', 'Yahoo': '🟤', 'Banking': '🏦',
 };
 
+/* ── Predefined groups with keyword matching ── */
+const PREDEFINED_GROUPS: { label: string; emoji: string; keywords: string[] }[] = [
+  { label: 'All', emoji: '🌐', keywords: [] },
+  { label: 'Facebook', emoji: '🔵', keywords: ['facebook', 'fb.com', 'messenger'] },
+  { label: 'Instagram', emoji: '📸', keywords: ['instagram'] },
+  { label: 'Gmail / Google', emoji: '📧', keywords: ['google', 'gmail'] },
+  { label: 'Twitter / X', emoji: '🐦', keywords: ['twitter', 'x.com', 'tweet'] },
+  { label: 'WhatsApp', emoji: '💬', keywords: ['whatsapp'] },
+  { label: 'TikTok', emoji: '🎵', keywords: ['tiktok'] },
+  { label: 'LinkedIn', emoji: '💼', keywords: ['linkedin'] },
+  { label: 'Netflix', emoji: '🎬', keywords: ['netflix'] },
+  { label: 'Gaming', emoji: '🎮', keywords: ['steam', 'epic', 'game', 'gaming', 'psn', 'playstation', 'xbox', 'minecraft', 'roblox', 'twitch', 'valorant'] },
+  { label: 'WiFi', emoji: '📶', keywords: ['wifi', 'wi-fi', 'network', 'router', 'hotspot'] },
+  { label: 'Bank / Finance', emoji: '🏦', keywords: ['bank', 'banking', 'nabil', 'siddhartha', 'kumari', 'esewa', 'khalti', 'finance', 'invest'] },
+  { label: 'Wallet / Cards', emoji: '💳', keywords: ['wallet', 'card', 'paypal', 'stripe', 'visa', 'mastercard', 'credit', 'debit'] },
+  { label: 'Shopping', emoji: '🛒', keywords: ['amazon', 'shopify', 'daraz', 'aliexpress', 'ebay', 'shop', 'store'] },
+  { label: 'Work / Tools', emoji: '🧰', keywords: ['slack', 'notion', 'jira', 'github', 'gitlab', 'zoom', 'teams', 'office', 'outlook', 'microsoft', 'dropbox', 'work'] },
+  { label: 'Others', emoji: '🔑', keywords: [] },
+];
+
+function matchesGroup(pwd: PasswordItem, group: (typeof PREDEFINED_GROUPS)[number]): boolean {
+  if (group.label === 'All') return true;
+  const text = ((pwd.title || '') + ' ' + (pwd.url || '') + ' ' + (pwd.notes || '')).toLowerCase();
+  if (group.label === 'Others') {
+    return !PREDEFINED_GROUPS.slice(1, -1).some(g => g.keywords.some(kw => text.includes(kw)));
+  }
+  return group.keywords.some(kw => text.includes(kw));
+}
+
 export const Passwords: React.FC = () => {
   const { passwords, addPassword, updatePassword, deletePassword } = useVaultStore();
   const { toast } = useToast();
@@ -65,6 +95,7 @@ export const Passwords: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(
     passwords.length > 0 ? passwords[0].id : null
   );
+  const [selectedGroup, setSelectedGroup] = useState<string>('All');
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -223,6 +254,20 @@ export const Passwords: React.FC = () => {
     }
   };
 
+  const activeGroupDef = PREDEFINED_GROUPS.find(g => g.label === selectedGroup) || PREDEFINED_GROUPS[0];
+  const groupFilteredPasswords = useMemo(() =>
+    passwords.filter(p => matchesGroup(p, activeGroupDef)),
+    [passwords, selectedGroup]
+  );
+
+  const groupCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    PREDEFINED_GROUPS.forEach(g => {
+      counts[g.label] = g.label === 'All' ? passwords.length : passwords.filter(p => matchesGroup(p, g)).length;
+    });
+    return counts;
+  }, [passwords]);
+
   return (
     <div className="space-y-6 pb-12 select-none">
       {/* Header */}
@@ -248,61 +293,79 @@ export const Passwords: React.FC = () => {
         </button>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      {/* Main Layout: Groups | List | Detail */}
+      <div className="flex gap-4 items-start">
+        {/* Groups Sidebar */}
+        <div className="hidden lg:flex flex-col glass-panel rounded-2xl border border-white/10 overflow-hidden w-44 flex-shrink-0">
+          <div className="p-3 border-b border-white/10 bg-white/[0.02]">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+              <LayoutGrid className="w-3 h-3" />
+              Groups
+            </span>
+          </div>
+          <div className="divide-y divide-white/5 max-h-[600px] overflow-y-auto no-scrollbar">
+            {PREDEFINED_GROUPS.map((group) => {
+              const count = groupCounts[group.label] || 0;
+              const isActive = selectedGroup === group.label;
+              return (
+                <button
+                  key={group.label}
+                  onClick={() => setSelectedGroup(group.label)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-all ${
+                    isActive
+                      ? 'bg-blue-600/20 border-l-2 border-blue-500'
+                      : 'border-l-2 border-transparent hover:bg-white/[0.03] hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm">{group.emoji}</span>
+                    <span className={`text-[11px] font-medium truncate ${isActive ? 'text-white' : 'text-gray-300'}`}>
+                      {group.label}
+                    </span>
+                  </div>
+                  {count > 0 && (
+                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-bold flex-shrink-0 ${
+                      isActive ? 'bg-blue-500 text-white' : 'bg-white/5 text-gray-500'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Mobile Group Tabs */}
+        <div className="lg:hidden col-span-full overflow-x-auto no-scrollbar flex gap-1.5 pb-1">
+          {PREDEFINED_GROUPS.map(g => (
+            <button
+              key={g.label}
+              onClick={() => setSelectedGroup(g.label)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
+                selectedGroup === g.label
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
+              }`}
+            >
+              <span>{g.emoji}</span>
+              <span>{g.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Main Grid: List + Detail */}
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0 items-start">
         {/* Left Side: List */}
         <div className="glass-panel rounded-2xl border border-white/10 overflow-hidden space-y-1">
           <div className="p-3 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-              Saved Passwords ({passwords.length})
+              {activeGroupDef.emoji} {activeGroupDef.label} ({groupFilteredPasswords.length})
             </span>
           </div>
 
           <div className="divide-y divide-white/5 max-h-[600px] overflow-y-auto no-scrollbar">
-            {/* ── Grouped passwords ── */}
-            {Object.entries(groupedMap).map(([service, items]) => (
-              <div key={service}>
-                <div className="px-3.5 py-2 bg-gradient-to-r from-blue-950/50 to-transparent sticky top-0 z-10">
-                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <span>{SERVICE_ICONS[service] || '🔑'}</span>
-                    <span>{service}</span>
-                    <span className="text-gray-600 font-normal normal-case">({items.length} accounts)</span>
-                  </span>
-                </div>
-                {items.map((pwd) => {
-                  const isSelected = pwd.id === selectedId;
-                  return (
-                    <div
-                      key={pwd.id}
-                      onClick={() => setSelectedId(pwd.id)}
-                      className={`pl-7 pr-3.5 py-3 flex items-center justify-between transition-all cursor-pointer border-l-2 ${
-                        isSelected
-                          ? 'bg-gradient-to-r from-blue-600/20 to-indigo-600/10 border-blue-500'
-                          : 'border-transparent hover:bg-white/[0.02] hover:border-blue-500/20'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`p-1.5 rounded-lg flex-shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-400'}`}>
-                          <KeyRound className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className={`text-xs font-semibold truncate ${isSelected ? 'text-white' : 'text-gray-200'}`}>{pwd.title}</p>
-                          <p className="text-[10px] text-gray-500 truncate">{pwd.username || 'No username'}</p>
-                        </div>
-                      </div>
-                      <span className={`text-[9px] px-1.5 rounded font-bold uppercase tracking-wider flex-shrink-0 ml-2 ${
-                        pwd.strength === 'Excellent' ? 'bg-emerald-500/10 text-emerald-400' :
-                        pwd.strength === 'Strong' ? 'bg-blue-500/10 text-blue-400' :
-                        pwd.strength === 'Medium' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'
-                      }`}>{pwd.strength}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-
-            {/* ── Ungrouped passwords ── */}
-            {ungrouped.map((pwd) => {
+            {groupFilteredPasswords.map((pwd) => {
               const isSelected = pwd.id === selectedId;
               return (
                 <div
@@ -334,16 +397,18 @@ export const Passwords: React.FC = () => {
               );
             })}
 
-            {passwords.length === 0 && (
+            {groupFilteredPasswords.length === 0 && (
               <div className="p-8 text-center text-xs text-gray-500">
-                No passwords saved yet. Click "Save a Password" above to start.
+                {passwords.length === 0
+                  ? 'No passwords saved yet.'
+                  : `No passwords in "${activeGroupDef.label}" group.`}
               </div>
             )}
           </div>
         </div>
 
         {/* Right Side: Detail */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 col-span-1">
           {selectedPwd ? (
             <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -500,6 +565,7 @@ export const Passwords: React.FC = () => {
               </p>
             </div>
           )}
+        </div>
         </div>
       </div>
 

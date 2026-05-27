@@ -10,7 +10,8 @@ import {
   UserCheck, 
   Lock, 
   Plus, 
-  Trash2 
+  Trash2,
+  Trash,
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
@@ -23,14 +24,14 @@ export const Security: React.FC = () => {
     activityLogs, 
     emergencyContacts, 
     addEmergencyContact, 
-    triggerEmergencyAccess 
+    triggerEmergencyAccess,
+    clearActivityLogs,
   } = useVaultStore();
   
   const { toast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'audit' | 'sessions' | 'emergency'>('audit');
   
-  // Emergency Form State
   const [showAddContact, setShowAddContact] = useState(false);
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
@@ -38,7 +39,6 @@ export const Security: React.FC = () => {
   const [contactRel, setContactRel] = useState('Spouse');
   const [contactDelay, setContactDelay] = useState(24);
 
-  // QR Modal
   const [showQrCode, setShowQrCode] = useState(false);
 
   const handleAddContactSubmit = async (e: React.FormEvent) => {
@@ -65,6 +65,23 @@ export const Security: React.FC = () => {
     if (confirm('WARNING: This will immediately allow your trusted emergency contacts to request access to your files. Continue?')) {
       triggerEmergencyAccess();
       toast({ title: 'Emergency Access Started', type: 'error' });
+    }
+  };
+
+  const handleClearLogs = () => {
+    if (confirm('Clear all activity logs? This cannot be undone.')) {
+      clearActivityLogs();
+      toast({ title: 'Activity Logs Cleared', type: 'info' });
+    }
+  };
+
+  const getActionColor = (action: string) => {
+    switch (action) {
+      case 'upload': return 'text-emerald-400 bg-emerald-500/10';
+      case 'delete': return 'text-rose-400 bg-rose-500/10';
+      case 'login': return 'text-blue-400 bg-blue-500/10';
+      case 'logout': return 'text-gray-400 bg-white/5';
+      default: return 'text-purple-400 bg-purple-500/10';
     }
   };
 
@@ -174,24 +191,34 @@ export const Security: React.FC = () => {
 
           {/* Account Activity Timeline */}
           <div className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Recent Account Actions
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                Recent Account Actions
+              </h3>
+              {activityLogs.length > 0 && (
+                <button
+                  onClick={handleClearLogs}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition-all"
+                  title="Clear all activity logs"
+                >
+                  <Trash className="w-3.5 h-3.5" />
+                  <span>Clear All</span>
+                </button>
+              )}
+            </div>
 
-            <div className="space-y-3">
-              {activityLogs.slice(0, 8).map((log) => (
-                <div key={log.id} className="flex items-start gap-3 text-xs">
-                  <div className="mt-0.5 p-1 rounded-md bg-white/5 text-gray-400 flex-shrink-0">
-                    <Clock className="w-3.5 h-3.5" />
+            <div className="space-y-2">
+              {activityLogs.slice(0, 10).map((log) => (
+                <div key={log.id} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                  <div className={`mt-0.5 p-1.5 rounded-lg flex-shrink-0 ${getActionColor(log.action)}`}>
+                    <Clock className="w-3 h-3" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-gray-200 font-medium">{log.details}</p>
-                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500">
-                      <span className="uppercase tracking-wider text-blue-400 font-bold">{log.action}</span>
-                      <span>•</span>
-                      <span>{log.device}</span>
-                      <span>•</span>
-                      <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                    <p className="text-xs text-gray-200 font-medium">{log.details}</p>
+                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 flex-wrap">
+                      <span className={`uppercase tracking-wider font-bold text-[9px] px-1.5 py-0.5 rounded ${getActionColor(log.action)}`}>{log.action}</span>
+                      {log.device && <span>{log.device}</span>}
+                      <span>{new Date(log.timestamp).toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -201,6 +228,12 @@ export const Security: React.FC = () => {
                 <div className="py-8 text-center text-xs text-gray-500">
                   No actions logged yet. Your recent log history will show here.
                 </div>
+              )}
+
+              {activityLogs.length > 10 && (
+                <p className="text-center text-[10px] text-gray-600 pt-2">
+                  Showing 10 of {activityLogs.length} logs
+                </p>
               )}
             </div>
           </div>
@@ -263,6 +296,12 @@ export const Security: React.FC = () => {
                   )}
                 </div>
               ))}
+
+              {sessions.length === 0 && (
+                <div className="py-8 text-center text-xs text-gray-500">
+                  No active sessions found.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -331,8 +370,7 @@ export const Security: React.FC = () => {
                         </span>
                         <span>•</span>
                         <span>{contact.email}</span>
-                        <span>•</span>
-                        <span>{contact.phone}</span>
+                        {contact.phone && <><span>•</span><span>{contact.phone}</span></>}
                       </div>
                     </div>
                   </div>
@@ -407,7 +445,6 @@ export const Security: React.FC = () => {
                   <label className="text-xs font-semibold text-gray-300">Phone Number</label>
                   <input
                     type="tel"
-                    required
                     placeholder="+1 (555) 019-2834"
                     value={contactPhone}
                     onChange={(e) => setContactPhone(e.target.value)}
@@ -427,8 +464,10 @@ export const Security: React.FC = () => {
                     <option value="Spouse">Spouse</option>
                     <option value="Sibling">Sibling</option>
                     <option value="Parent">Parent</option>
+                    <option value="Child">Child</option>
                     <option value="Friend">Friend</option>
                     <option value="Attorney">Attorney</option>
+                    <option value="Colleague">Colleague</option>
                   </select>
                 </div>
 
@@ -449,7 +488,7 @@ export const Security: React.FC = () => {
               </div>
 
               <p className="text-[10px] text-gray-500 leading-relaxed">
-                🔒 Your contact will only receive access if you do not cancel their request within the chosen waiting period.
+                Your contact will only receive access if you do not cancel their request within the chosen waiting period.
               </p>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -472,7 +511,7 @@ export const Security: React.FC = () => {
         </div>
       )}
 
-      {/* GENERATE RECOVERY CARD MODAL */}
+      {/* RECOVERY CARD MODAL */}
       {showQrCode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowQrCode(false)} />

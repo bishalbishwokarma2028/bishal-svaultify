@@ -16,7 +16,9 @@ import {
   Info,
   KeyRound,
   Eye,
-  EyeIcon
+  EyeIcon,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
@@ -66,10 +68,12 @@ export const HiddenVault: React.FC = () => {
   const [previewingFile, setPreviewingFile] = useState<import('../types').FileItem | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   const openPreview = (file: import('../types').FileItem) => {
     setPreviewingFile(file);
     setPreviewUrl(null);
+    setZoomLevel(1);
     setPreviewLoading(true);
     if (isLocalFileUrl(file.url)) {
       getFileContent(getFileIdFromUrl(file.url)).then(url => {
@@ -535,7 +539,7 @@ export const HiddenVault: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-2xl max-h-[90vh] glass-panel-premium rounded-3xl border border-white/10 shadow-2xl z-10 flex flex-col overflow-hidden"
+              className="relative w-full max-w-5xl max-h-[92vh] glass-panel-premium rounded-3xl border border-white/10 shadow-2xl z-10 flex flex-col overflow-hidden"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
@@ -554,6 +558,32 @@ export const HiddenVault: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {previewUrl && previewingFile.type.startsWith('image/') && (
+                    <>
+                      <button
+                        onClick={() => setZoomLevel(z => Math.max(0.25, z - 0.25))}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="w-4 h-4" />
+                      </button>
+                      <span className="text-[10px] text-gray-500 min-w-[32px] text-center">{Math.round(zoomLevel * 100)}%</span>
+                      <button
+                        onClick={() => setZoomLevel(z => Math.min(4, z + 0.25))}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setZoomLevel(1)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all text-[10px] font-bold"
+                        title="Reset Zoom"
+                      >
+                        1:1
+                      </button>
+                    </>
+                  )}
                   {previewUrl && (
                     <a
                       href={previewUrl}
@@ -582,7 +612,14 @@ export const HiddenVault: React.FC = () => {
                 ) : previewUrl ? (
                   <>
                     {previewingFile.type.startsWith('image/') && (
-                      <img src={previewUrl} alt={previewingFile.name} className="max-w-full max-h-full object-contain p-4" />
+                      <div className="overflow-auto flex items-center justify-center w-full h-full p-4">
+                        <img
+                          src={previewUrl}
+                          alt={previewingFile.name}
+                          className="rounded shadow-xl transition-transform duration-200 object-contain"
+                          style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', maxWidth: zoomLevel <= 1 ? '100%' : 'none', maxHeight: zoomLevel <= 1 ? '100%' : 'none' }}
+                        />
+                      </div>
                     )}
                     {previewingFile.type.startsWith('video/') && (
                       <video src={previewUrl} controls className="max-w-full max-h-full p-4" />

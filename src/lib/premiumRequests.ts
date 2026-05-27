@@ -1,5 +1,7 @@
 const REQUESTS_KEY = 'vaultify-payment-requests';
 const APPROVED_KEY = 'vaultify-premium-approved';
+const USERS_REGISTRY_KEY = 'vaultify-users-registry';
+const ADMIN_TOKEN_KEY = 'vaultify-admin-token';
 
 export interface PremiumRequest {
   id: string;
@@ -9,6 +11,14 @@ export interface PremiumRequest {
   status: 'pending' | 'approved' | 'rejected';
   submittedAt: string;
   reviewedAt?: string;
+}
+
+export interface RegisteredUser {
+  id: string;
+  email: string;
+  fullName: string;
+  registeredAt: string;
+  lastSignInAt: string;
 }
 
 export const getAllRequests = (): PremiumRequest[] => {
@@ -69,3 +79,37 @@ export const getApprovedEmails = (): string[] =>
 
 export const isEmailApproved = (email: string): boolean =>
   getApprovedSet().has(email.toLowerCase().trim());
+
+export const registerUser = (user: { id: string; email: string; fullName: string }): void => {
+  const existing = getUsersRegistry();
+  const lowerEmail = user.email.toLowerCase().trim();
+  const idx = existing.findIndex(u => u.email === lowerEmail);
+  const now = new Date().toISOString();
+  if (idx >= 0) {
+    existing[idx] = { ...existing[idx], lastSignInAt: now, fullName: user.fullName || existing[idx].fullName };
+  } else {
+    existing.push({ id: user.id, email: lowerEmail, fullName: user.fullName, registeredAt: now, lastSignInAt: now });
+  }
+  localStorage.setItem(USERS_REGISTRY_KEY, JSON.stringify(existing));
+};
+
+export const getUsersRegistry = (): RegisteredUser[] => {
+  try {
+    return JSON.parse(localStorage.getItem(USERS_REGISTRY_KEY) || '[]');
+  } catch {
+    return [];
+  }
+};
+
+export const setAdminSession = (): void => {
+  localStorage.setItem(ADMIN_TOKEN_KEY, 'authenticated-' + Date.now());
+};
+
+export const getAdminSession = (): boolean => {
+  const token = localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+  return token.startsWith('authenticated-');
+};
+
+export const clearAdminSession = (): void => {
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+};

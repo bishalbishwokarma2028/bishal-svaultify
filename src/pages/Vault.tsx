@@ -25,7 +25,9 @@ import {
   Video,
   X,
   ExternalLink,
-  Maximize2
+  Maximize2,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { CategoryType, FileItem } from '../types';
@@ -78,6 +80,7 @@ export const Vault: React.FC = () => {
     initialFileId ? files.find(f => f.id === initialFileId) || null : null
   );
   const [resolvedPreviewUrl, setResolvedPreviewUrl] = useState<string | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -112,6 +115,7 @@ export const Vault: React.FC = () => {
 
   useEffect(() => {
     if (!previewFile) { setResolvedPreviewUrl(null); return; }
+    setZoomLevel(1);
     if (isLocalFileUrl(previewFile.url)) {
       getFileContent(getFileIdFromUrl(previewFile.url)).then(url => {
         setResolvedPreviewUrl(url || null);
@@ -619,7 +623,7 @@ export const Vault: React.FC = () => {
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 40 }}
-              className="relative w-full sm:max-w-3xl glass-panel-premium sm:rounded-3xl rounded-t-3xl border border-white/10 shadow-2xl overflow-hidden z-10 flex flex-col max-h-[92vh] sm:max-h-[85vh]"
+              className="relative w-full sm:max-w-5xl glass-panel-premium sm:rounded-3xl rounded-t-3xl border border-white/10 shadow-2xl overflow-hidden z-10 flex flex-col max-h-[92vh] sm:max-h-[90vh]"
             >
               <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/10 bg-black/40">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -633,6 +637,32 @@ export const Vault: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {resolvedPreviewUrl && isImage(previewFile.type) && (
+                    <>
+                      <button
+                        onClick={() => setZoomLevel(z => Math.max(0.25, z - 0.25))}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="w-4 h-4" />
+                      </button>
+                      <span className="text-[10px] text-gray-500 min-w-[32px] text-center">{Math.round(zoomLevel * 100)}%</span>
+                      <button
+                        onClick={() => setZoomLevel(z => Math.min(4, z + 0.25))}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setZoomLevel(1)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors text-[10px] font-bold"
+                        title="Reset Zoom"
+                      >
+                        1:1
+                      </button>
+                    </>
+                  )}
                   {resolvedPreviewUrl && (
                     <button
                       onClick={() => {
@@ -689,14 +719,17 @@ export const Vault: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex-1 bg-slate-950 flex items-center justify-center relative overflow-auto min-h-[200px] sm:min-h-[300px] p-4">
+              <div className="flex-1 bg-slate-950 flex items-center justify-center relative overflow-auto min-h-[300px] sm:min-h-[400px] p-4">
                 {resolvedPreviewUrl ? (
                   isImage(previewFile.type) ? (
-                    <img 
-                      src={resolvedPreviewUrl} 
-                      alt={previewFile.name} 
-                      className="max-h-full max-w-full object-contain rounded shadow-2xl"
-                    />
+                    <div className="overflow-auto flex items-center justify-center w-full h-full">
+                      <img 
+                        src={resolvedPreviewUrl} 
+                        alt={previewFile.name} 
+                        className="rounded shadow-2xl transition-transform duration-200 object-contain"
+                        style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', maxWidth: zoomLevel <= 1 ? '100%' : 'none', maxHeight: zoomLevel <= 1 ? '100%' : 'none' }}
+                      />
+                    </div>
                   ) : isPdf(previewFile.type) ? (
                     <iframe
                       src={resolvedPreviewUrl}

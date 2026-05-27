@@ -9,7 +9,11 @@ import {
   Trash2, 
   FileText, 
   KeyRound, 
-  ShieldAlert
+  ShieldAlert,
+  AlertTriangle,
+  TrendingUp,
+  CheckCheck,
+  Timer
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
@@ -30,6 +34,7 @@ export const Reminders: React.FC = () => {
   const [itemId, setItemId] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [notifyBeforeDays, setNotifyBeforeDays] = useState(30);
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
 
   const getDaysRemaining = (dateStr: string) => {
     const diff = new Date(dateStr).getTime() - new Date().getTime();
@@ -52,12 +57,25 @@ export const Reminders: React.FC = () => {
       
       setTitle('');
       setExpiryDate('');
+      setPriority('medium');
       setShowAddModal(false);
     }
   };
 
   const activeReminders = reminders.filter(r => !r.isResolved);
   const resolvedReminders = reminders.filter(r => r.isResolved);
+  const expiredReminders = activeReminders.filter(r => getDaysRemaining(r.expiryDate) < 0);
+  const upcomingReminders = activeReminders.filter(r => {
+    const days = getDaysRemaining(r.expiryDate);
+    return days >= 0 && days <= 30;
+  });
+
+  const PRIORITY_CONFIG = {
+    low: { label: 'Low', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+    medium: { label: 'Medium', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+    high: { label: 'High', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
+    critical: { label: 'Critical', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
+  };
 
   return (
     <div className="space-y-6 pb-12 select-none">
@@ -101,6 +119,72 @@ export const Reminders: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Stats Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="glass-panel rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+            <BellRing className="w-4 h-4 text-blue-400" />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider">Total</p>
+            <p className="text-lg font-bold text-white">{reminders.length}</p>
+          </div>
+        </div>
+        <div className="glass-panel rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+            <Timer className="w-4 h-4 text-amber-400" />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider">Active</p>
+            <p className="text-lg font-bold text-white">{activeReminders.length}</p>
+          </div>
+        </div>
+        <div className="glass-panel rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-rose-500/10 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-4 h-4 text-rose-400" />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider">Expired</p>
+            <p className="text-lg font-bold text-rose-400">{expiredReminders.length}</p>
+          </div>
+        </div>
+        <div className="glass-panel rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+            <CheckCheck className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider">Done</p>
+            <p className="text-lg font-bold text-emerald-400">{resolvedReminders.length}</p>
+          </div>
+        </div>
+      </div>
+
+      {upcomingReminders.length > 0 && (
+        <div className="glass-panel rounded-2xl p-4 border border-amber-500/20 bg-amber-500/5">
+          <p className="text-xs font-bold text-amber-400 mb-2 flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5" />
+            {upcomingReminders.length} {upcomingReminders.length === 1 ? 'reminder' : 'reminders'} due within 30 days
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {upcomingReminders.map(r => {
+              const days = getDaysRemaining(r.expiryDate);
+              const pct = Math.max(0, Math.min(100, ((30 - days) / 30) * 100));
+              return (
+                <div key={r.id} className="flex items-center gap-2 bg-white/5 rounded-lg px-2.5 py-1.5 min-w-[140px]">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-white font-semibold truncate">{r.title}</p>
+                    <div className="w-full bg-white/10 rounded-full h-1 mt-1">
+                      <div className="h-1 rounded-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                  <span className="text-[9px] text-amber-400 font-bold flex-shrink-0">{days}d</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {viewMode === 'list' ? (
         <div className="space-y-6">
@@ -401,6 +485,26 @@ export const Reminders: React.FC = () => {
                   <option value={30}>30 Days Before</option>
                   <option value={60}>60 Days Before</option>
                 </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-300">Priority Level</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(['low', 'medium', 'high', 'critical'] as const).map(p => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPriority(p)}
+                      className={`py-1.5 rounded-lg text-[10px] font-bold border transition-all capitalize ${
+                        priority === p 
+                          ? PRIORITY_CONFIG[p].color
+                          : 'text-gray-500 bg-white/5 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      {PRIORITY_CONFIG[p].label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
