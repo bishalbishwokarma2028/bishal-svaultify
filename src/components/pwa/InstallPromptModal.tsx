@@ -24,11 +24,12 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({ isOpen, 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-sm">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            initial={{ opacity: 0, scale: 0.95, y: 24 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 16 }}
+            exit={{ opacity: 0, scale: 0.95, y: 24 }}
+            transition={{ type: 'spring', damping: 22, stiffness: 300 }}
             className="w-full max-w-sm bg-slate-900 rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-gradient-to-r from-blue-950/60 to-slate-900">
@@ -41,7 +42,10 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({ isOpen, 
                   <p className="text-[10px] text-gray-400">Add to your home screen</p>
                 </div>
               </div>
-              <button onClick={onClose} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all">
+              <button
+                onClick={onClose}
+                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all"
+              >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -62,9 +66,18 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({ isOpen, 
                     <Smartphone className="w-3.5 h-3.5" /> iOS — Add to Home Screen
                   </p>
                   <ol className="space-y-1 text-[11px] text-gray-300">
-                    <li className="flex items-start gap-1.5"><span className="text-blue-400 font-bold">1.</span><span>Tap the <Share2 className="w-3 h-3 inline mx-0.5 text-white" /> Share button in Safari's bottom bar</span></li>
-                    <li className="flex items-start gap-1.5"><span className="text-blue-400 font-bold">2.</span><span>Scroll down, tap "Add to Home Screen"</span></li>
-                    <li className="flex items-start gap-1.5"><span className="text-blue-400 font-bold">3.</span><span>Tap "Add" in the top-right corner</span></li>
+                    <li className="flex items-start gap-1.5">
+                      <span className="text-blue-400 font-bold flex-shrink-0">1.</span>
+                      <span>Tap the <Share2 className="w-3 h-3 inline mx-0.5 text-white" /> Share button in Safari's bottom bar</span>
+                    </li>
+                    <li className="flex items-start gap-1.5">
+                      <span className="text-blue-400 font-bold flex-shrink-0">2.</span>
+                      <span>Scroll down, tap <span className="font-semibold text-white">"Add to Home Screen"</span></span>
+                    </li>
+                    <li className="flex items-start gap-1.5">
+                      <span className="text-blue-400 font-bold flex-shrink-0">3.</span>
+                      <span>Tap <span className="font-semibold text-white">"Add"</span> in the top-right corner</span>
+                    </li>
                   </ol>
                 </div>
               ) : canInstall ? (

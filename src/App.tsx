@@ -125,6 +125,7 @@ export const App: React.FC = () => {
         setTimeout(() => syncFromSupabase(), 800);
       } else if (event === 'SIGNED_OUT') {
         clearAuth();
+        sessionStorage.removeItem('VAULTIFY_PWA_PROMPT_SHOWN');
       }
     });
 
