@@ -35,7 +35,7 @@ import {
   PremiumRequest,
 } from '../lib/premiumRequests';
 
-const ADMIN_EMAIL = 'bishalbishwokarma089@gmail.com';
+const ADMIN_EMAIL = 'bishalbishwokarma2028@gmail.com';
 const ADMIN_PASSWORD = 'bishal@ado@9802485583';
 
 const APP_VERSION = '2.1.0';
