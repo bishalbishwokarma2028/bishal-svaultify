@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 export interface PWAInstallHook {
   canInstall: boolean;
@@ -10,6 +10,19 @@ export interface PWAInstallHook {
 
 const DISMISSED_KEY = 'vaultify-pwa-dismissed';
 
+// Capture the event as early as possible — before React even mounts.
+// This runs the moment this module is imported.
+let _deferredPrompt: any = null;
+
+function capturePrompt(e: Event) {
+  e.preventDefault();
+  _deferredPrompt = e;
+  // Notify any mounted hook instances
+  window.dispatchEvent(new CustomEvent('vaultify-pwa-ready'));
+}
+
+window.addEventListener('beforeinstallprompt', capturePrompt);
+
 function checkIsInstalled(): boolean {
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -19,60 +32,65 @@ function checkIsInstalled(): boolean {
 }
 
 export const usePWAInstall = (): PWAInstallHook => {
-  const [canInstall, setCanInstall] = useState(false);
+  const [canInstall, setCanInstall] = useState(() => !!_deferredPrompt && !checkIsInstalled());
   const [isInstalled, setIsInstalled] = useState(checkIsInstalled);
   const [isDismissed, setIsDismissed] = useState(
     () => localStorage.getItem(DISMISSED_KEY) === 'true'
   );
-  const deferredPrompt = useRef<any>(null);
 
   useEffect(() => {
-    if (checkIsInstalled()) return;
-
-    const handler = (e: Event) => {
-      e.preventDefault();
-      deferredPrompt.current = e;
-      setCanInstall(true);
-    };
-
-    const installedHandler = () => {
+    if (checkIsInstalled()) {
       setIsInstalled(true);
       setCanInstall(false);
-      deferredPrompt.current = null;
+      return;
+    }
+
+    // Sync in case the prompt arrived before this hook mounted
+    if (_deferredPrompt) setCanInstall(true);
+
+    const onReady = () => {
+      if (_deferredPrompt) setCanInstall(true);
+    };
+
+    const onInstalled = () => {
+      setIsInstalled(true);
+      setCanInstall(false);
+      _deferredPrompt = null;
       localStorage.removeItem(DISMISSED_KEY);
     };
 
     const mq = window.matchMedia('(display-mode: standalone)');
-    const mqHandler = (e: MediaQueryListEvent) => {
+    const onMqChange = (e: MediaQueryListEvent) => {
       if (e.matches) {
         setIsInstalled(true);
         setCanInstall(false);
       }
     };
 
-    window.addEventListener('beforeinstallprompt', handler);
-    window.addEventListener('appinstalled', installedHandler);
-    mq.addEventListener('change', mqHandler);
+    window.addEventListener('vaultify-pwa-ready', onReady);
+    window.addEventListener('appinstalled', onInstalled);
+    mq.addEventListener('change', onMqChange);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
-      window.removeEventListener('appinstalled', installedHandler);
-      mq.removeEventListener('change', mqHandler);
+      window.removeEventListener('vaultify-pwa-ready', onReady);
+      window.removeEventListener('appinstalled', onInstalled);
+      mq.removeEventListener('change', onMqChange);
     };
   }, []);
 
   const promptInstall = async (): Promise<boolean> => {
-    if (!deferredPrompt.current) return false;
+    if (!_deferredPrompt) return false;
     try {
-      deferredPrompt.current.prompt();
-      const { outcome } = await deferredPrompt.current.userChoice;
-      deferredPrompt.current = null;
+      _deferredPrompt.prompt();
+      const { outcome } = await _deferredPrompt.userChoice;
+      _deferredPrompt = null;
       setCanInstall(false);
       if (outcome === 'accepted') {
         setIsInstalled(true);
         localStorage.removeItem(DISMISSED_KEY);
+        return true;
       }
-      return outcome === 'accepted';
+      return false;
     } catch {
       return false;
     }

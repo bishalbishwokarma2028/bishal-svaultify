@@ -64,12 +64,24 @@ export const Settings: React.FC = () => {
   // PWA install
   const { canInstall, isInstalled, promptInstall } = usePWAInstall();
   const [installResult, setInstallResult] = useState<'accepted' | 'dismissed' | null>(null);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [installGuideTab, setInstallGuideTab] = useState<'chrome' | 'android' | 'ios' | 'edge'>('chrome');
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isAndroid = /Android/.test(navigator.userAgent);
+
+  useEffect(() => {
+    if (isIOS) setInstallGuideTab('ios');
+    else if (isAndroid) setInstallGuideTab('android');
+    else if (/Edg\//.test(navigator.userAgent)) setInstallGuideTab('edge');
+    else setInstallGuideTab('chrome');
+  }, []);
 
   const handleInstallApp = async () => {
     if (canInstall) {
       const accepted = await promptInstall();
       setInstallResult(accepted ? 'accepted' : 'dismissed');
+    } else {
+      setShowInstallGuide(true);
     }
   };
 
@@ -626,8 +638,8 @@ export const Settings: React.FC = () => {
           {/* INSTALL APP */}
           {activeSection === 'install' && (
             <div className="space-y-4">
-              {/* Status card */}
               <div className={`rounded-3xl p-6 border ${isInstalled ? 'bg-emerald-950/30 border-emerald-500/25' : 'glass-panel-premium border-white/10'}`}>
+                {/* Header */}
                 <div className="flex items-center gap-4 mb-5">
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0 ${isInstalled ? 'bg-emerald-500/20' : 'bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-blue-900/40'}`}>
                     <Smartphone className={`w-7 h-7 ${isInstalled ? 'text-emerald-400' : 'text-white'}`} />
@@ -636,26 +648,22 @@ export const Settings: React.FC = () => {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-base font-bold text-white">Install Vaultify on Device</h3>
                       {isInstalled && (
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                          ✓ Installed
-                        </span>
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/20">✓ Installed</span>
                       )}
                     </div>
                     <p className="text-[11px] text-gray-400 mt-1">
-                      {isInstalled
-                        ? 'Vaultify is installed and running as a standalone app on this device.'
-                        : 'Add Vaultify to your home screen for instant access, offline use, and a full-screen experience.'}
+                      {isInstalled ? 'Running as a standalone app on this device.' : 'Add to your home screen — no app store needed.'}
                     </p>
                   </div>
                 </div>
 
-                {/* Benefits grid */}
+                {/* Benefits */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
                   {[
-                    { icon: '⚡', label: 'Instant open', desc: 'No browser needed' },
-                    { icon: '📴', label: 'Works offline', desc: 'Even without internet' },
-                    { icon: '🔒', label: 'Private', desc: 'Secure & sandboxed' },
-                    { icon: '🖥️', label: 'Full screen', desc: 'App-like experience' },
+                    { icon: '⚡', label: 'Instant open', desc: 'No browser tab' },
+                    { icon: '📴', label: 'Works offline', desc: 'No internet needed' },
+                    { icon: '🔒', label: 'Private', desc: 'Sandboxed & secure' },
+                    { icon: '🖥️', label: 'Full screen', desc: 'App-like feel' },
                   ].map((f, i) => (
                     <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-center">
                       <p className="text-xl mb-1">{f.icon}</p>
@@ -673,69 +681,133 @@ export const Settings: React.FC = () => {
                       <p className="text-[11px] text-gray-400 mt-0.5">You're using Vaultify as an installed app. Enjoy the full experience!</p>
                     </div>
                   </div>
-                ) : canInstall ? (
-                  <div className="space-y-3">
-                    {installResult === 'accepted' ? (
-                      <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                        <p className="text-sm font-bold text-emerald-300">Installation started! Check your home screen.</p>
-                      </div>
-                    ) : (
-                      <>
-                        <button
-                          onClick={handleInstallApp}
-                          className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-blue-900/40"
-                        >
-                          <Download className="w-5 h-5" />
-                          Install Vaultify — Add to Home Screen
-                        </button>
-                        <p className="text-[10px] text-gray-500 text-center">One click · No store required · Free forever</p>
-                      </>
-                    )}
-                  </div>
-                ) : isIOS ? (
-                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 space-y-3">
-                    <p className="text-xs font-bold text-blue-300 flex items-center gap-2">
-                      <Smartphone className="w-3.5 h-3.5" /> iOS — Add to Home Screen via Safari
-                    </p>
-                    <ol className="space-y-2.5">
-                      {[
-                        <>Open Vaultify in <span className="font-bold text-white">Safari</span> (required for iOS install)</>,
-                        <>Tap the <span className="font-bold text-white">Share ↑</span> button at the bottom of the screen</>,
-                        <>Scroll and tap <span className="font-bold text-white">"Add to Home Screen"</span></>,
-                        <>Tap <span className="font-bold text-white">"Add"</span> to confirm — it will appear on your home screen</>,
-                      ].map((step, i) => (
-                        <li key={i} className="flex items-start gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-blue-600/30 text-blue-300 text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                          <span className="text-[11px] text-gray-300 leading-relaxed">{step}</span>
-                        </li>
-                      ))}
-                    </ol>
+                ) : installResult === 'accepted' ? (
+                  <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                    <p className="text-sm font-bold text-emerald-300">Installation started! Check your home screen.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 space-y-3">
-                      <p className="text-xs font-bold text-blue-300 flex items-center gap-2">
-                        <Monitor className="w-3.5 h-3.5" /> Install via your browser
-                      </p>
-                      <ol className="space-y-2.5">
-                        {[
-                          <><span className="font-bold text-white">Chrome / Edge:</span> Click the <span className="font-bold text-white">⊕</span> install icon in the address bar</>,
-                          <><span className="font-bold text-white">Or:</span> Open the browser menu (⋮) → select <span className="font-bold text-white">"Install app"</span> or <span className="font-bold text-white">"Add to Home Screen"</span></>,
-                          <>Confirm by clicking <span className="font-bold text-white">"Install"</span> — Vaultify opens as a standalone app</>,
-                        ].map((step, i) => (
-                          <li key={i} className="flex items-start gap-2.5">
-                            <span className="w-5 h-5 rounded-full bg-blue-600/30 text-blue-300 text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                            <span className="text-[11px] text-gray-300 leading-relaxed">{step}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
+                    {/* THE REAL INSTALL BUTTON — always visible */}
+                    <button
+                      onClick={handleInstallApp}
+                      className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98] text-white text-sm font-bold transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-blue-900/40"
+                    >
+                      <Download className="w-5 h-5" />
+                      {canInstall ? 'Install Vaultify — Add to Home Screen' : 'How to Install Vaultify'}
+                    </button>
                     <p className="text-[10px] text-gray-500 text-center">
-                      On Android? Open in Chrome and tap menu → "Add to Home screen"
+                      {canInstall ? 'One click · No app store · Free forever' : 'Tap to see step-by-step installation guide'}
                     </p>
                   </div>
                 )}
+
+                {/* How-to guide — shown when browser hasn't offered native prompt */}
+                <AnimatePresence>
+                  {showInstallGuide && !isInstalled && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-4 overflow-hidden"
+                    >
+                      <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 overflow-hidden">
+                        {/* Tab bar */}
+                        <div className="flex border-b border-white/[0.06] overflow-x-auto">
+                          {[
+                            { id: 'chrome', label: 'Chrome', emoji: '🌐' },
+                            { id: 'edge', label: 'Edge', emoji: '🔷' },
+                            { id: 'android', label: 'Android', emoji: '🤖' },
+                            { id: 'ios', label: 'iPhone/iPad', emoji: '🍎' },
+                          ].map(tab => (
+                            <button
+                              key={tab.id}
+                              onClick={() => setInstallGuideTab(tab.id as any)}
+                              className={`flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-semibold whitespace-nowrap transition-colors flex-shrink-0 ${
+                                installGuideTab === tab.id
+                                  ? 'text-blue-300 border-b-2 border-blue-400 bg-blue-500/10'
+                                  : 'text-gray-500 hover:text-gray-300'
+                              }`}
+                            >
+                              <span>{tab.emoji}</span>
+                              <span>{tab.label}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Steps */}
+                        <div className="p-4">
+                          {installGuideTab === 'chrome' && (
+                            <ol className="space-y-3">
+                              {[
+                                <>Look for the <span className="font-bold text-white">⊕ install</span> icon in your address bar (right side) and click it</>,
+                                <>Or click the <span className="font-bold text-white">⋮ menu</span> (three dots) in the top-right corner</>,
+                                <>Select <span className="font-bold text-white">"Install Vaultify…"</span> or <span className="font-bold text-white">"Save and share → Install page as app"</span></>,
+                                <>Click <span className="font-bold text-white">"Install"</span> — Vaultify opens as a standalone window on your desktop/device</>,
+                              ].map((step, i) => (
+                                <li key={i} className="flex items-start gap-2.5">
+                                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                                  <span className="text-[11px] text-gray-300 leading-relaxed">{step}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                          {installGuideTab === 'edge' && (
+                            <ol className="space-y-3">
+                              {[
+                                <>Look for the <span className="font-bold text-white">⊕ install</span> icon in the address bar and click it</>,
+                                <>Or click the <span className="font-bold text-white">… menu</span> (three dots) → <span className="font-bold text-white">Apps</span></>,
+                                <>Select <span className="font-bold text-white">"Install this site as an app"</span></>,
+                                <>Click <span className="font-bold text-white">"Install"</span> to confirm</>,
+                              ].map((step, i) => (
+                                <li key={i} className="flex items-start gap-2.5">
+                                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                                  <span className="text-[11px] text-gray-300 leading-relaxed">{step}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                          {installGuideTab === 'android' && (
+                            <ol className="space-y-3">
+                              {[
+                                <>Open Vaultify in <span className="font-bold text-white">Chrome for Android</span></>,
+                                <>Tap the <span className="font-bold text-white">⋮ menu</span> in the top-right corner</>,
+                                <>Tap <span className="font-bold text-white">"Add to Home screen"</span></>,
+                                <>Tap <span className="font-bold text-white">"Add"</span> — the Vaultify icon appears on your home screen</>,
+                              ].map((step, i) => (
+                                <li key={i} className="flex items-start gap-2.5">
+                                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                                  <span className="text-[11px] text-gray-300 leading-relaxed">{step}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                          {installGuideTab === 'ios' && (
+                            <ol className="space-y-3">
+                              {[
+                                <>Open Vaultify in <span className="font-bold text-white">Safari</span> (iOS requires Safari for installation)</>,
+                                <>Tap the <span className="font-bold text-white">Share ↑</span> button at the bottom of Safari</>,
+                                <>Scroll down and tap <span className="font-bold text-white">"Add to Home Screen"</span></>,
+                                <>Tap <span className="font-bold text-white">"Add"</span> in the top-right — Vaultify appears on your home screen</>,
+                              ].map((step, i) => (
+                                <li key={i} className="flex items-start gap-2.5">
+                                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                                  <span className="text-[11px] text-gray-300 leading-relaxed">{step}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                          <button
+                            onClick={() => setShowInstallGuide(false)}
+                            className="mt-4 w-full py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 hover:text-white text-xs font-medium transition-colors"
+                          >
+                            Close guide
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           )}
