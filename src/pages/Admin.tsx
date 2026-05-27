@@ -56,7 +56,7 @@ import {
 } from '../lib/supportChat';
 
 const ADMIN_EMAIL = 'bishalbishwokarma089@gmail.com';
-const ADMIN_PASSWORD = 'bishal@ado@9802485583';
+const ADMIN_PASSWORD = 'bishal@ado@9746294386';
 
 const APP_VERSION = '2.1.0';
 const FREE_LIMIT_GB = 5;

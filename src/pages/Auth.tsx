@@ -20,7 +20,7 @@ export const Auth: React.FC = () => {
   const { toast } = useToast();
 
   const ADMIN_EMAIL = 'bishalbishwokarma089@gmail.com';
-  const ADMIN_PASSWORD = 'bishal@ado@9802485583';
+  const ADMIN_PASSWORD = 'bishal@ado@9746294386';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,13 +66,13 @@ export const Auth: React.FC = () => {
           password,
           options: {
             data: { full_name: fullName || email.split('@')[0] },
-            emailRedirectTo: undefined,
           },
         });
 
         if (error) throw error;
 
-        if (data.user) {
+        if (data.user && data.session) {
+          // Email confirmation is OFF — user is immediately active
           const profile = {
             id: data.user.id,
             email: data.user.email!,
@@ -87,6 +87,15 @@ export const Auth: React.FC = () => {
           registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
           toast({ title: 'Account Created!', description: 'Welcome to your secure vault.', type: 'success' });
           navigate('/dashboard');
+        } else if (data.user && !data.session) {
+          // Email confirmation is ON — Supabase sent a confirmation email
+          toast({
+            title: 'Check Your Email',
+            description: `A confirmation link was sent to ${email}. Click it to activate your account, then sign in.`,
+            type: 'success',
+          });
+          setMode('login');
+          setPassword('');
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
