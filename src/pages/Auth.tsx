@@ -19,7 +19,7 @@ export const Auth: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const ADMIN_EMAIL = 'bishalbishwokarma2028@gmail.com';
+  const ADMIN_EMAIL = 'bishalbishwokarma089@gmail.com';
   const ADMIN_PASSWORD = 'bishal@ado@9802485583';
 
   const handleSubmit = async (e: React.FormEvent) => {
