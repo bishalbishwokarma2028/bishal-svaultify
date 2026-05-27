@@ -1,127 +1,101 @@
 import React from 'react';
-import { Modal } from '../ui/Modal';
-import { Smartphone, Monitor, Download, Check, Sparkles, Share } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Smartphone, Monitor, Download, Check, X, Share2 } from 'lucide-react';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 interface InstallPromptModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
-  isOpen,
-  onClose
-}) => {
+export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({ isOpen, onClose }) => {
+  const { canInstall, isInstalled, promptInstall } = usePWAInstall();
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
 
+  const handleInstall = async () => {
+    if (canInstall) {
+      const accepted = await promptInstall();
+      if (accepted) onClose();
+    }
+  };
+
+  if (isInstalled) return null;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Install Vaultify PWA">
-      <div className="space-y-6">
-        {/* Banner */}
-        <div className="relative overflow-hidden rounded-xl p-6 bg-gradient-to-r from-blue-900/40 via-indigo-900/40 to-slate-900 border border-blue-500/20 text-center">
-          <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-blue-500/20 rounded-full blur-xl" />
-          <div className="mx-auto w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg glow-blue mb-3">
-            <Sparkles className="w-6 h-6 text-white" />
-          </div>
-          <h4 className="text-base font-bold text-white tracking-wide">
-            Experience the Ultimate Native Speed
-          </h4>
-          <p className="text-xs text-gray-300 mt-1">
-            Install Vaultify directly to your device for standalone access, enhanced security boundaries, and automatic background sync.
-          </p>
-        </div>
-
-        {/* Options */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Phone Install */}
-          <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 hover:border-blue-500/40 transition-all flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Smartphone className="w-4 h-4 text-blue-400" />
-                <span className="text-xs font-semibold text-white">Mobile Home Screen</span>
-              </div>
-              <p className="text-[11px] text-gray-400">
-                Optimized for iPhone & Android with custom app shell, local cache, and push capabilities.
-              </p>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-white/5">
-              {isIOS ? (
-                <div className="text-[11px] text-gray-300 bg-white/5 p-2 rounded-lg space-y-1">
-                  <p className="font-medium text-blue-400">iOS Installation:</p>
-                  <p className="flex items-center gap-1">1. Tap the <Share className="w-3 h-3 inline text-white"/> Share icon below</p>
-                  <p>2. Select "Add to Home Screen"</p>
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 16 }}
+            className="w-full max-w-sm bg-slate-900 rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-gradient-to-r from-blue-950/60 to-slate-900">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center">
+                  <Download className="w-4 h-4 text-white" />
                 </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    // simulate native install prompt
-                    alert('To install, open the browser menu and select "Install app" or "Add to Home screen".');
-                  }}
-                  className="w-full py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Install on Phone</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Desktop Install */}
-          <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 hover:border-blue-500/40 transition-all flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Monitor className="w-4 h-4 text-purple-400" />
-                <span className="text-xs font-semibold text-white">Desktop & Dock</span>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Install Vaultify</h3>
+                  <p className="text-[10px] text-gray-400">Add to your home screen</p>
+                </div>
               </div>
-              <p className="text-[11px] text-gray-400">
-                Launch as an independent secure window on macOS Dock or Windows Desktop. Seamless shortcut support.
-              </p>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-white/5">
-              <button
-                onClick={() => {
-                  alert('Click the install icon (⊕ or ⤓) in the right corner of your browser\'s top address bar to install Vaultify Desktop.');
-                }}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 glow-blue"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Install on Desktop</span>
+              <button onClick={onClose} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all">
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
-          </div>
-        </div>
 
-        {/* Perks */}
-        <div className="space-y-2">
-          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">
-            PWA Core Advantages
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              'Zero Browser Chrome UI',
-              'Offline Storage Cache',
-              'Native OS System Gestures',
-              'Hardware Encrypted Enclave'
-            ].map((perk, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-xs text-gray-300">
-                <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                <span className="truncate">{perk}</span>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                {['Works offline', 'Home screen icon', 'Full-screen view', 'Fast & lightweight'].map((perk, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-gray-300 bg-white/[0.03] border border-white/5 rounded-lg px-2.5 py-1.5">
+                    <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                    <span>{perk}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Done */}
-        <div className="pt-2">
-          <button
-            onClick={onClose}
-            className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-xs font-semibold transition-colors"
-          >
-            I've already installed / Continue in browser
-          </button>
+              {isIOS ? (
+                <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
+                  <p className="text-xs font-semibold text-blue-300 flex items-center gap-1.5">
+                    <Smartphone className="w-3.5 h-3.5" /> iOS — Add to Home Screen
+                  </p>
+                  <ol className="space-y-1 text-[11px] text-gray-300">
+                    <li className="flex items-start gap-1.5"><span className="text-blue-400 font-bold">1.</span><span>Tap the <Share2 className="w-3 h-3 inline mx-0.5 text-white" /> Share button in Safari's bottom bar</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-blue-400 font-bold">2.</span><span>Scroll down, tap "Add to Home Screen"</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-blue-400 font-bold">3.</span><span>Tap "Add" in the top-right corner</span></li>
+                  </ol>
+                </div>
+              ) : canInstall ? (
+                <button
+                  onClick={handleInstall}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <Download className="w-4 h-4" />
+                  Install Now
+                </button>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-1.5">
+                  <p className="text-xs font-semibold text-white flex items-center gap-1.5">
+                    <Monitor className="w-3.5 h-3.5 text-blue-400" /> Install via Browser
+                  </p>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Look for the <span className="text-white font-semibold">⊕</span> install icon in your browser's address bar, or open the browser menu and select <span className="text-white">"Install app"</span> / <span className="text-white">"Add to Home Screen"</span>.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={onClose}
+                className="w-full py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] text-gray-400 hover:text-white text-xs font-medium transition-all"
+              >
+                Maybe later
+              </button>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </Modal>
+      )}
+    </AnimatePresence>
   );
 };

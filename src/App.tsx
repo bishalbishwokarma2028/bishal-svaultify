@@ -61,6 +61,12 @@ const AdminBanner: React.FC = () => {
   );
 };
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 export const App: React.FC = () => {
   const { isAuthenticated, login, clearAuth, theme, syncPremiumFromGlobal, syncFromSupabase } = useVaultStore();
 
@@ -126,13 +132,18 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+    const isInstalled =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+    if (isInstalled) return;
     const timer = setTimeout(() => {
       const promptShown = sessionStorage.getItem('VAULTIFY_PWA_PROMPT_SHOWN');
-      if (!promptShown && isAuthenticated) {
+      if (!promptShown) {
         setShowInstallPrompt(true);
         sessionStorage.setItem('VAULTIFY_PWA_PROMPT_SHOWN', 'true');
       }
-    }, 4500);
+    }, 3000);
     return () => clearTimeout(timer);
   }, [isAuthenticated]);
 
