@@ -437,6 +437,7 @@ export const Notes: React.FC = () => {
                   type="password"
                   required
                   autoFocus
+                  autoComplete="new-password"
                   placeholder="••••"
                   value={challengePin}
                   onChange={(e) => setChallengePin(e.target.value)}

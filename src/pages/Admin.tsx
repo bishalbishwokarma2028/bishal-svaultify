@@ -245,6 +245,7 @@ export const Admin: React.FC = () => {
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••••"
                   required
+                  autoComplete="new-password"
                   className="w-full bg-white/[0.04] text-white text-sm rounded-xl px-4 py-3 pr-11 border border-white/10 focus:border-blue-500 outline-none placeholder:text-gray-600"
                 />
                 <button

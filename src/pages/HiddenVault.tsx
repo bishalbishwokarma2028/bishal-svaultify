@@ -711,6 +711,7 @@ export const HiddenVault: React.FC = () => {
                     type="password"
                     required
                     autoFocus
+                    autoComplete="new-password"
                     placeholder="Enter new PIN (min 4 digits)"
                     value={newPinInput}
                     onChange={(e) => { setNewPinInput(e.target.value); setPinError(''); }}
@@ -723,6 +724,7 @@ export const HiddenVault: React.FC = () => {
                   <input
                     type="password"
                     required
+                    autoComplete="new-password"
                     placeholder="Re-enter the same PIN"
                     value={confirmPinInput}
                     onChange={(e) => { setConfirmPinInput(e.target.value); setPinError(''); }}

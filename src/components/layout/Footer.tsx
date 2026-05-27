@@ -13,7 +13,8 @@ export const Footer: React.FC = () => {
           </div>
           <div>
             <span className="font-bold tracking-wider text-white text-sm">VAULTIFY</span>
-            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 mt-0.5">
+            <p className="text-[10px] text-gray-500 mt-0.5">Built By Bishal</p>
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-600 mt-0.5">
               <Lock className="w-2.5 h-2.5 text-emerald-500" />
               <span>Zero-Knowledge AES-GCM 256 Architecture</span>
             </div>
