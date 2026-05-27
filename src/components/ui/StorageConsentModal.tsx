@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HardDrive, ShieldCheck, Lock, CheckCircle2 } from 'lucide-react';
+import { Cloud, ShieldCheck, Lock, CheckCircle2, Smartphone } from 'lucide-react';
 
 const STORAGE_KEY = 'vaultify-storage-consent-v1';
 
@@ -32,26 +32,26 @@ export const StorageConsentModal: React.FC = () => {
           >
             <div className="bg-gradient-to-r from-blue-600/20 to-indigo-600/20 border-b border-white/10 px-6 py-5 flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
-                <HardDrive className="w-5 h-5 text-blue-400" />
+                <Cloud className="w-5 h-5 text-blue-400" />
               </div>
               <div>
-                <h2 className="text-sm font-black text-white">Device Storage Required</h2>
-                <p className="text-[11px] text-gray-400 mt-0.5">Vaultify uses your browser's local storage</p>
+                <h2 className="text-sm font-black text-white">Your Vault is Cloud-Backed</h2>
+                <p className="text-[11px] text-gray-400 mt-0.5">All data is tied to your account email</p>
               </div>
             </div>
 
             <div className="p-6 space-y-5">
               <p className="text-xs text-gray-300 leading-relaxed">
-                All your data — passwords, files, notes and reminders — is stored
-                <span className="text-white font-bold"> exclusively on this device</span>.
-                Nothing is sent to any server. Your privacy is guaranteed.
+                Everything you save — passwords, files, notes and reminders — is
+                <span className="text-white font-bold"> permanently stored to your account</span>.
+                Sign in with the same email on any device and all your data will be there.
               </p>
 
               <div className="space-y-3">
                 {[
-                  { icon: Lock, label: 'End-to-end encrypted on your device', color: 'text-blue-400 bg-blue-500/10' },
-                  { icon: ShieldCheck, label: 'Zero access by Vaultify or any third party', color: 'text-emerald-400 bg-emerald-500/10' },
-                  { icon: HardDrive, label: 'Data never leaves your browser storage', color: 'text-purple-400 bg-purple-500/10' },
+                  { icon: ShieldCheck, label: 'End-to-end encrypted & securely stored', color: 'text-blue-400 bg-blue-500/10' },
+                  { icon: Smartphone, label: 'Switch phones anytime — data always follows you', color: 'text-emerald-400 bg-emerald-500/10' },
+                  { icon: Lock, label: 'Only you can access your vault with your email', color: 'text-purple-400 bg-purple-500/10' },
                 ].map(({ icon: Icon, label, color }) => (
                   <div key={label} className="flex items-center gap-3">
                     <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
@@ -62,9 +62,9 @@ export const StorageConsentModal: React.FC = () => {
                 ))}
               </div>
 
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-                <p className="text-[11px] text-amber-300 leading-relaxed">
-                  <strong>Important:</strong> Clearing your browser data or using Private/Incognito mode will erase your vault. Always keep backups of critical files.
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+                <p className="text-[11px] text-emerald-300 leading-relaxed">
+                  <strong>Phone damaged or lost?</strong> Simply sign in with your email on a new device — every password, note, and file will be restored automatically.
                 </p>
               </div>
 
@@ -73,7 +73,7 @@ export const StorageConsentModal: React.FC = () => {
                 className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold transition-all shadow-lg flex items-center justify-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                Enable Storage &amp; Continue
+                Got it, Open My Vault
               </button>
             </div>
           </motion.div>

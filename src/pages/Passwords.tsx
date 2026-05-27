@@ -642,7 +642,7 @@ export const Passwords: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Gmail, Amazon, Bank Account, WiFi"
+                    placeholder="Type your own category"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full bg-white/[0.04] text-white text-xs rounded-xl px-3.5 py-2.5 border border-white/10 focus:border-purple-500 outline-none"
