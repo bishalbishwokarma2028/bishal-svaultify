@@ -179,6 +179,72 @@
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.5); }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.8); }
 
+/* ── Input & form field containers in light mode ── */
+[data-theme="light"] .bg-slate-900 {
+  background-color: #f1f5f9 !important;
+}
+[data-theme="light"] .bg-slate-950 {
+  background-color: #e8edf5 !important;
+}
+
+/* ── Modal/dialog backdrops in light mode ── */
+[data-theme="light"] .rounded-3xl.glass-panel-premium,
+[data-theme="light"] .rounded-3xl.glass-panel {
+  background: rgba(255,255,255,0.97) !important;
+  border-color: rgba(15,23,42,0.12) !important;
+  box-shadow: 0 8px 40px rgba(15,23,42,0.12) !important;
+}
+
+/* ── Page/card headers ── */
+[data-theme="light"] .bg-gradient-to-r.from-blue-950\/40,
+[data-theme="light"] .bg-gradient-to-r.from-blue-950\/50 {
+  background: linear-gradient(to right, rgba(219,234,254,0.6), transparent) !important;
+}
+[data-theme="light"] .bg-gradient-to-r.from-purple-950\/40 {
+  background: linear-gradient(to right, rgba(237,233,254,0.6), transparent) !important;
+}
+[data-theme="light"] .bg-gradient-to-r.from-slate-900,
+[data-theme="light"] .from-slate-900.to-slate-800 {
+  background: linear-gradient(to right, #f1f5f9, #e2e8f0) !important;
+}
+
+/* ── Common dark card backgrounds ── */
+[data-theme="light"] .bg-\[\#030712\]\/50 { background-color: rgba(241,245,249,0.7) !important; }
+[data-theme="light"] .bg-\[\#030712\]\/80 { background-color: rgba(241,245,249,0.9) !important; }
+
+/* ── Navbar / top bar ── */
+[data-theme="light"] .bg-black\/40.border-b { 
+  background-color: rgba(255,255,255,0.92) !important; 
+  border-color: rgba(15,23,42,0.10) !important;
+}
+
+/* ── Form focus ring colors stay readable ── */
+[data-theme="light"] .focus\:border-blue-500:focus { border-color: #3b82f6 !important; }
+[data-theme="light"] .focus\:border-indigo-500:focus { border-color: #6366f1 !important; }
+
+/* ── Keep colored accent text (badges, tags) unchanged ── */
+[data-theme="light"] .text-blue-400   { color: #2563eb !important; }
+[data-theme="light"] .text-blue-300   { color: #1d4ed8 !important; }
+[data-theme="light"] .text-indigo-400 { color: #4f46e5 !important; }
+[data-theme="light"] .text-emerald-400 { color: #059669 !important; }
+[data-theme="light"] .text-emerald-300 { color: #047857 !important; }
+[data-theme="light"] .text-purple-400  { color: #7c3aed !important; }
+[data-theme="light"] .text-purple-300  { color: #6d28d9 !important; }
+[data-theme="light"] .text-rose-400    { color: #e11d48 !important; }
+[data-theme="light"] .text-amber-400   { color: #d97706 !important; }
+[data-theme="light"] .text-teal-400    { color: #0f766e !important; }
+
+/* ── Sidebar nav items ── */
+[data-theme="light"] aside .text-gray-400 { color: #64748b !important; }
+[data-theme="light"] aside .text-gray-300 { color: #475569 !important; }
+[data-theme="light"] aside .text-white    { color: #0f172a !important; }
+[data-theme="light"] aside a,
+[data-theme="light"] aside button { color: #334155 !important; }
+
+/* ── Navbar items ── */
+[data-theme="light"] nav .text-gray-400 { color: #64748b !important; }
+[data-theme="light"] nav .text-white    { color: #0f172a !important; }
+
 /* ══════════════════════════════════════════════════════════ */
 
 /* Custom Webkit Scrollbars (dark default) */

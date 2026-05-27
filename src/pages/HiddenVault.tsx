@@ -21,6 +21,7 @@ import {
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
 import { getFileContent, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
+import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
 
 export const HiddenVault: React.FC = () => {
   const { 
@@ -57,6 +58,31 @@ export const HiddenVault: React.FC = () => {
 
   /* ── File add ── */
   const [isAdding, setIsAdding] = useState(false);
+
+  /* ── Delete confirmation ── */
+  const [confirmDeleteFile, setConfirmDeleteFile] = useState<import('../types').FileItem | null>(null);
+
+  /* ── File preview ── */
+  const [previewingFile, setPreviewingFile] = useState<import('../types').FileItem | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const openPreview = (file: import('../types').FileItem) => {
+    setPreviewingFile(file);
+    setPreviewUrl(null);
+    setPreviewLoading(true);
+    if (isLocalFileUrl(file.url)) {
+      getFileContent(getFileIdFromUrl(file.url)).then(url => {
+        setPreviewUrl(url || null);
+        setPreviewLoading(false);
+      }).catch(() => setPreviewLoading(false));
+    } else if (file.url) {
+      setPreviewUrl(file.url);
+      setPreviewLoading(false);
+    } else {
+      setPreviewLoading(false);
+    }
+  };
 
   const noPinSet = hiddenVaultPin === '';
 
@@ -456,12 +482,8 @@ export const HiddenVault: React.FC = () => {
                       file={file}
                       getFileIcon={getFileIcon}
                       getFileColor={getFileColor}
-                      onDelete={() => {
-                        if (confirm(`Delete secret file "${file.name}"?`)) {
-                          deleteFile(file.id);
-                          toast({ title: 'File Deleted', type: 'info' });
-                        }
-                      }}
+                      onDelete={() => setConfirmDeleteFile(file)}
+                      onView={() => openPreview(file)}
                     />
                   ))}
                 </div>
@@ -497,6 +519,130 @@ export const HiddenVault: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── FILE PREVIEW MODAL ── */}
+      <AnimatePresence>
+        {previewingFile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/90 backdrop-blur-md"
+              onClick={() => { setPreviewingFile(null); setPreviewUrl(null); }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-2xl max-h-[90vh] glass-panel-premium rounded-3xl border border-white/10 shadow-2xl z-10 flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                    <EyeOff className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{previewingFile.name}</p>
+                    <p className="text-[10px] text-gray-500">
+                      {previewingFile.size < 1024 * 1024
+                        ? `${(previewingFile.size / 1024).toFixed(1)} KB`
+                        : `${(previewingFile.size / (1024 * 1024)).toFixed(1)} MB`}
+                      {' · '}Secret File
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {previewUrl && (
+                    <a
+                      href={previewUrl}
+                      download={previewingFile.name}
+                      className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all flex items-center gap-1.5"
+                    >
+                      ↓ Download
+                    </a>
+                  )}
+                  <button
+                    onClick={() => { setPreviewingFile(null); setPreviewUrl(null); }}
+                    className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-auto flex items-center justify-center bg-black/30 min-h-[300px]">
+                {previewLoading ? (
+                  <div className="flex flex-col items-center gap-3 text-center p-8">
+                    <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-xs text-gray-400">Loading secret file...</p>
+                  </div>
+                ) : previewUrl ? (
+                  <>
+                    {previewingFile.type.startsWith('image/') && (
+                      <img src={previewUrl} alt={previewingFile.name} className="max-w-full max-h-full object-contain p-4" />
+                    )}
+                    {previewingFile.type.startsWith('video/') && (
+                      <video src={previewUrl} controls className="max-w-full max-h-full p-4" />
+                    )}
+                    {previewingFile.type.startsWith('audio/') && (
+                      <div className="p-8 flex flex-col items-center gap-4">
+                        <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center">
+                          <FileText className="w-8 h-8 text-purple-400" />
+                        </div>
+                        <audio src={previewUrl} controls className="w-full max-w-xs" />
+                      </div>
+                    )}
+                    {previewingFile.type === 'application/pdf' && (
+                      <iframe src={previewUrl} className="w-full h-full min-h-[500px]" title={previewingFile.name} />
+                    )}
+                    {!previewingFile.type.startsWith('image/') && !previewingFile.type.startsWith('video/') && !previewingFile.type.startsWith('audio/') && previewingFile.type !== 'application/pdf' && (
+                      <div className="p-8 flex flex-col items-center gap-4 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center">
+                          <File className="w-8 h-8 text-purple-400" />
+                        </div>
+                        <p className="text-sm font-semibold text-white">{previewingFile.name}</p>
+                        <p className="text-xs text-gray-400">Preview not available for this file type.</p>
+                        <a
+                          href={previewUrl}
+                          download={previewingFile.name}
+                          className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all"
+                        >
+                          Download File
+                        </a>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="p-8 flex flex-col items-center gap-4 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
+                      <File className="w-8 h-8 text-gray-500" />
+                    </div>
+                    <p className="text-xs text-gray-400">Could not load file content.</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── DELETE CONFIRMATION ── */}
+      <ConfirmDeleteModal
+        isOpen={!!confirmDeleteFile}
+        itemName={confirmDeleteFile?.name || ''}
+        itemType="secret file"
+        onConfirm={() => {
+          if (confirmDeleteFile) {
+            deleteFile(confirmDeleteFile.id);
+            toast({ title: 'File Deleted', description: `"${confirmDeleteFile.name}" removed from secret vault.`, type: 'info' });
+            setConfirmDeleteFile(null);
+          }
+        }}
+        onCancel={() => setConfirmDeleteFile(null)}
+      />
 
       {/* ── CHANGE PIN MODAL ── */}
       <AnimatePresence>
@@ -587,25 +733,35 @@ interface FileCardProps {
   getFileIcon: (type: string) => React.ReactNode;
   getFileColor: (type: string) => string;
   onDelete: () => void;
+  onView: () => void;
 }
 
-const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, onDelete }) => {
-  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, onDelete, onView }) => {
+  const [thumbUrl, setThumbUrl] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!file.type.startsWith('image/')) return;
     if (isLocalFileUrl(file.url)) {
-      getFileContent(getFileIdFromUrl(file.url)).then(url => setPreviewUrl(url || null)).catch(() => {});
+      getFileContent(getFileIdFromUrl(file.url)).then(url => setThumbUrl(url || null)).catch(() => {});
     } else if (file.url) {
-      setPreviewUrl(file.url);
+      setThumbUrl(file.url);
     }
   }, [file]);
 
   return (
-    <div className="p-4 rounded-2xl glass-panel border border-white/10 flex flex-col justify-between group relative overflow-hidden">
-      {previewUrl && (
+    <div
+      onClick={onView}
+      className="p-4 rounded-2xl glass-panel border border-white/10 flex flex-col justify-between group relative overflow-hidden cursor-pointer hover:border-purple-500/40 hover:bg-purple-500/5 transition-all"
+    >
+      {thumbUrl ? (
         <div className="mb-3 rounded-xl overflow-hidden h-28 bg-black/30">
-          <img src={previewUrl} alt={file.name} className="w-full h-full object-cover" />
+          <img src={thumbUrl} alt={file.name} className="w-full h-full object-cover" />
+        </div>
+      ) : (
+        <div className="mb-3 rounded-xl h-20 bg-white/[0.03] border border-white/5 flex items-center justify-center">
+          <div className={`p-3 rounded-xl ${getFileColor(file.type)} opacity-60`}>
+            {getFileIcon(file.type)}
+          </div>
         </div>
       )}
 
@@ -615,7 +771,7 @@ const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, on
         </div>
 
         <button
-          onClick={onDelete}
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-white/5 transition-all"
           title="Delete File"
         >
@@ -634,6 +790,7 @@ const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, on
               : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
           </span>
         </div>
+        <p className="text-[10px] text-gray-600 mt-1 group-hover:text-purple-400 transition-colors">Tap to open →</p>
       </div>
     </div>
   );

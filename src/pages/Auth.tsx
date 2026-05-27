@@ -255,13 +255,21 @@ export const Auth: React.FC = () => {
         </div>
 
         <div className="text-center text-[10px] text-gray-600 space-y-1">
-          <p>Your data is stored securely in your own Supabase project</p>
+          <p>All data is stored privately on your device.</p>
           <div className="flex items-center justify-center gap-3">
             <span>End-to-End Private</span>
             <span>•</span>
             <span>Your Data, Your Control</span>
             <span>•</span>
             <span>AES-256 Encrypted</span>
+          </div>
+          <div className="pt-2 border-t border-white/5 mt-2">
+            <a
+              href="/admin"
+              className="text-[10px] text-gray-600 hover:text-blue-400 transition-colors"
+            >
+              Admin Panel →
+            </a>
           </div>
         </div>
       </div>

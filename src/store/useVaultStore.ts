@@ -152,15 +152,12 @@ export const useVaultStore = create<VaultStore>()(
       },
 
       clearAuth: () => {
+        // Only clear authentication state — do NOT wipe user data (files, notes, passwords, etc.)
+        // so that when the same user signs back in, all their data is still there.
         set({
           isAuthenticated: false,
           user: null,
           hiddenVaultUnlocked: false,
-          folders: [],
-          files: [],
-          passwords: [],
-          notes: [],
-          reminders: [],
           activityLogs: [],
           emergencyContacts: [],
           sharedLinks: [],

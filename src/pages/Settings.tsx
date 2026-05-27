@@ -456,23 +456,23 @@ export const Settings: React.FC = () => {
 
                     {/* QR Code */}
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-40 h-40 bg-white rounded-2xl flex items-center justify-center overflow-hidden border-4 border-indigo-500/40 shadow-lg">
+                      <div className="w-full max-w-[260px] mx-auto bg-white rounded-2xl overflow-hidden border-2 border-indigo-500/40 shadow-xl">
                         <img 
                           src="/qr.png" 
                           alt="Payment QR Code" 
-                          className="w-full h-full object-cover"
+                          className="w-full h-auto object-contain"
                           onError={(e) => {
                             const t = e.currentTarget;
                             t.style.display = 'none';
                             t.nextElementSibling?.removeAttribute('style');
                           }}
                         />
-                        <div style={{ display: 'none' }} className="flex flex-col items-center gap-2 text-center p-3">
-                          <QrCode className="w-12 h-12 text-gray-400" />
-                          <p className="text-[10px] text-gray-500">QR code image not found.<br/>Upload <code>qr.png</code> to <code>/public/</code></p>
+                        <div style={{ display: 'none' }} className="flex flex-col items-center gap-2 text-center p-6">
+                          <QrCode className="w-14 h-14 text-gray-400" />
+                          <p className="text-[10px] text-gray-500">QR code image not found.</p>
                         </div>
                       </div>
-                      <p className="text-[11px] text-gray-400 text-center">Scan the QR code and pay Rs.300</p>
+                      <p className="text-[11px] text-gray-400 text-center">Scan to pay Rs.300 · Siddhartha Bank</p>
                     </div>
 
                     {/* Transaction ID */}

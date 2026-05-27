@@ -9,6 +9,7 @@ import { Navbar } from './components/layout/Navbar';
 import { MobileNav } from './components/layout/MobileNav';
 import { CommandPalette } from './components/command/CommandPalette';
 import { InstallPromptModal } from './components/pwa/InstallPromptModal';
+import { StorageConsentModal } from './components/ui/StorageConsentModal';
 
 import { Landing } from './pages/Landing';
 import { Auth } from './pages/Auth';
@@ -187,6 +188,7 @@ export const App: React.FC = () => {
           />
         </Routes>
       </Router>
+      <StorageConsentModal />
     </ToastProvider>
   );
 };

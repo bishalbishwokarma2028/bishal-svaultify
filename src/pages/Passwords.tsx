@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   KeyRound, 
@@ -17,6 +17,46 @@ import { useVaultStore } from '../store/useVaultStore';
 import { PasswordItem } from '../types';
 import { useToast } from '../components/ui/Toast';
 import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
+
+/* ── Service detection for auto-grouping ── */
+function detectService(title: string, url?: string): string | null {
+  const text = ((title || '') + ' ' + (url || '')).toLowerCase();
+  if (text.includes('facebook') || text.includes('fb.com') || text.includes('messenger')) return 'Facebook';
+  if (text.includes('google') || text.includes('gmail') || text.includes('google.com')) return 'Google';
+  if (text.includes('instagram') || text.includes('instagram.com')) return 'Instagram';
+  if (text.includes('twitter') || text.includes('x.com') || text.includes('tweet')) return 'Twitter / X';
+  if (text.includes('linkedin') || text.includes('linkedin.com')) return 'LinkedIn';
+  if (text.includes('amazon') || text.includes('amazon.com') || text.includes('prime')) return 'Amazon';
+  if (text.includes('apple') || text.includes('apple.com') || text.includes('icloud') || text.includes('itunes')) return 'Apple';
+  if (text.includes('microsoft') || text.includes('outlook') || text.includes('hotmail') || text.includes('msn')) return 'Microsoft';
+  if (text.includes('netflix') || text.includes('netflix.com')) return 'Netflix';
+  if (text.includes('youtube') || text.includes('youtube.com')) return 'YouTube';
+  if (text.includes('github') || text.includes('github.com')) return 'GitHub';
+  if (text.includes('whatsapp') || text.includes('whatsapp.com')) return 'WhatsApp';
+  if (text.includes('snapchat') || text.includes('snapchat.com')) return 'Snapchat';
+  if (text.includes('tiktok') || text.includes('tiktok.com')) return 'TikTok';
+  if (text.includes('paypal') || text.includes('paypal.com')) return 'PayPal';
+  if (text.includes('discord') || text.includes('discord.com')) return 'Discord';
+  if (text.includes('reddit') || text.includes('reddit.com')) return 'Reddit';
+  if (text.includes('spotify') || text.includes('spotify.com')) return 'Spotify';
+  if (text.includes('steam') || text.includes('steampowered')) return 'Steam';
+  if (text.includes('twitch') || text.includes('twitch.tv')) return 'Twitch';
+  if (text.includes('zoom') || text.includes('zoom.us')) return 'Zoom';
+  if (text.includes('slack') || text.includes('slack.com')) return 'Slack';
+  if (text.includes('dropbox') || text.includes('dropbox.com')) return 'Dropbox';
+  if (text.includes('yahoo') || text.includes('yahoo.com')) return 'Yahoo';
+  if (text.includes('bank') || text.includes('banking') || text.includes('siddhartha') || text.includes('nabil') || text.includes('kumari') || text.includes('laxmi')) return 'Banking';
+  return null;
+}
+
+const SERVICE_ICONS: Record<string, string> = {
+  'Facebook': '🔵', 'Google': '🔴', 'Instagram': '🟣', 'Twitter / X': '🐦',
+  'LinkedIn': '💼', 'Amazon': '📦', 'Apple': '🍎', 'Microsoft': '🪟',
+  'Netflix': '🎬', 'YouTube': '▶️', 'GitHub': '🐙', 'WhatsApp': '💬',
+  'Snapchat': '👻', 'TikTok': '🎵', 'PayPal': '💳', 'Discord': '🎮',
+  'Reddit': '🤖', 'Spotify': '🎧', 'Steam': '🕹️', 'Twitch': '🟣',
+  'Zoom': '📹', 'Slack': '💬', 'Dropbox': '📁', 'Yahoo': '🟤', 'Banking': '🏦',
+};
 
 export const Passwords: React.FC = () => {
   const { passwords, addPassword, updatePassword, deletePassword } = useVaultStore();
@@ -53,6 +93,28 @@ export const Passwords: React.FC = () => {
   const [genSymbols, setGenSymbols] = useState(true);
 
   const selectedPwd = passwords.find(p => p.id === selectedId) || null;
+
+  /* ── Auto-group by service ── */
+  const { groupedMap, ungrouped } = useMemo(() => {
+    const serviceCounts: Record<string, number> = {};
+    passwords.forEach(p => {
+      const s = detectService(p.title, p.url);
+      if (s) serviceCounts[s] = (serviceCounts[s] || 0) + 1;
+    });
+    const multiServices = new Set(Object.keys(serviceCounts).filter(s => serviceCounts[s] >= 2));
+    const gMap: Record<string, PasswordItem[]> = {};
+    const ung: PasswordItem[] = [];
+    passwords.forEach(p => {
+      const s = detectService(p.title, p.url);
+      if (s && multiServices.has(s)) {
+        if (!gMap[s]) gMap[s] = [];
+        gMap[s].push(p);
+      } else {
+        ung.push(p);
+      }
+    });
+    return { groupedMap: gMap, ungrouped: ung };
+  }, [passwords]);
 
   const checkStrength = (pwd: string): PasswordItem['strength'] => {
     if (pwd.length < 8) return 'Weak';
@@ -197,44 +259,76 @@ export const Passwords: React.FC = () => {
           </div>
 
           <div className="divide-y divide-white/5 max-h-[600px] overflow-y-auto no-scrollbar">
-            {passwords.map((pwd) => {
+            {/* ── Grouped passwords ── */}
+            {Object.entries(groupedMap).map(([service, items]) => (
+              <div key={service}>
+                <div className="px-3.5 py-2 bg-gradient-to-r from-blue-950/50 to-transparent sticky top-0 z-10">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>{SERVICE_ICONS[service] || '🔑'}</span>
+                    <span>{service}</span>
+                    <span className="text-gray-600 font-normal normal-case">({items.length} accounts)</span>
+                  </span>
+                </div>
+                {items.map((pwd) => {
+                  const isSelected = pwd.id === selectedId;
+                  return (
+                    <div
+                      key={pwd.id}
+                      onClick={() => setSelectedId(pwd.id)}
+                      className={`pl-7 pr-3.5 py-3 flex items-center justify-between transition-all cursor-pointer border-l-2 ${
+                        isSelected
+                          ? 'bg-gradient-to-r from-blue-600/20 to-indigo-600/10 border-blue-500'
+                          : 'border-transparent hover:bg-white/[0.02] hover:border-blue-500/20'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`p-1.5 rounded-lg flex-shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-400'}`}>
+                          <KeyRound className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className={`text-xs font-semibold truncate ${isSelected ? 'text-white' : 'text-gray-200'}`}>{pwd.title}</p>
+                          <p className="text-[10px] text-gray-500 truncate">{pwd.username || 'No username'}</p>
+                        </div>
+                      </div>
+                      <span className={`text-[9px] px-1.5 rounded font-bold uppercase tracking-wider flex-shrink-0 ml-2 ${
+                        pwd.strength === 'Excellent' ? 'bg-emerald-500/10 text-emerald-400' :
+                        pwd.strength === 'Strong' ? 'bg-blue-500/10 text-blue-400' :
+                        pwd.strength === 'Medium' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'
+                      }`}>{pwd.strength}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+
+            {/* ── Ungrouped passwords ── */}
+            {ungrouped.map((pwd) => {
               const isSelected = pwd.id === selectedId;
               return (
                 <div
                   key={pwd.id}
                   onClick={() => setSelectedId(pwd.id)}
                   className={`p-3.5 flex items-center justify-between transition-all cursor-pointer ${
-                    isSelected 
-                      ? 'bg-gradient-to-r from-blue-600/20 to-indigo-600/10 border-l-4 border-blue-500' 
+                    isSelected
+                      ? 'bg-gradient-to-r from-blue-600/20 to-indigo-600/10 border-l-4 border-blue-500'
                       : 'hover:bg-white/[0.02]'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className={`p-2 rounded-lg flex-shrink-0 ${
-                      isSelected ? 'bg-blue-600 text-white shadow' : 'bg-white/5 text-gray-400'
-                    }`}>
+                    <div className={`p-2 rounded-lg flex-shrink-0 ${isSelected ? 'bg-blue-600 text-white shadow' : 'bg-white/5 text-gray-400'}`}>
                       <KeyRound className="w-4 h-4" />
                     </div>
-
                     <div className="min-w-0">
-                      <p className={`text-xs font-semibold truncate ${isSelected ? 'text-white' : 'text-gray-200'}`}>
-                        {pwd.title}
-                      </p>
-                      <p className="text-[10px] text-gray-500 truncate">
-                        {pwd.username || 'No username'}
-                      </p>
+                      <p className={`text-xs font-semibold truncate ${isSelected ? 'text-white' : 'text-gray-200'}`}>{pwd.title}</p>
+                      <p className="text-[10px] text-gray-500 truncate">{pwd.username || 'No username'}</p>
                     </div>
                   </div>
-
                   <div className="flex-shrink-0 ml-2">
                     <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
                       pwd.strength === 'Excellent' ? 'bg-emerald-500/10 text-emerald-400' :
                       pwd.strength === 'Strong' ? 'bg-blue-500/10 text-blue-400' :
-                      pwd.strength === 'Medium' ? 'bg-amber-500/10 text-amber-400' :
-                      'bg-rose-500/10 text-rose-400'
-                    }`}>
-                      {pwd.strength}
-                    </span>
+                      pwd.strength === 'Medium' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'
+                    }`}>{pwd.strength}</span>
                   </div>
                 </div>
               );
