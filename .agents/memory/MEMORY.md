@@ -1,0 +1,1 @@
+- [Vaultify store design](vaultify-store.md) — per-user data isolation via `dataOwnerId`, file URL must be `local://ID` in Supabase too, syncFromSupabase merges not replaces

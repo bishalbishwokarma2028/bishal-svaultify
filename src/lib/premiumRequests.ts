@@ -64,5 +64,8 @@ export const removeApprovedEmail = (email: string): void => {
   localStorage.setItem(APPROVED_KEY, JSON.stringify(Array.from(set)));
 };
 
+export const getApprovedEmails = (): string[] =>
+  Array.from(getApprovedSet());
+
 export const isEmailApproved = (email: string): boolean =>
   getApprovedSet().has(email.toLowerCase().trim());

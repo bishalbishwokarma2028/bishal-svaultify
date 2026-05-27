@@ -23,7 +23,9 @@ import {
   File,
   Music,
   Video,
-  X
+  X,
+  ExternalLink,
+  Maximize2
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { CategoryType, FileItem } from '../types';
@@ -631,6 +633,34 @@ export const Vault: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {resolvedPreviewUrl && (
+                    <button
+                      onClick={() => {
+                        if (!resolvedPreviewUrl) return;
+                        // Convert data URL to blob for clean new-tab opening
+                        if (resolvedPreviewUrl.startsWith('data:')) {
+                          const arr = resolvedPreviewUrl.split(',');
+                          const mimeMatch = arr[0].match(/:(.*?);/);
+                          const mime = mimeMatch ? mimeMatch[1] : previewFile.type || 'application/octet-stream';
+                          const bstr = atob(arr[1]);
+                          const n = bstr.length;
+                          const u8arr = new Uint8Array(n);
+                          for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
+                          const blob = new Blob([u8arr], { type: mime });
+                          const blobUrl = URL.createObjectURL(blob);
+                          window.open(blobUrl, '_blank');
+                          setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+                        } else {
+                          window.open(resolvedPreviewUrl, '_blank');
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors flex items-center gap-1 active:scale-95"
+                      title="Open in new tab"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Open</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownload(previewFile)}
                     className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors flex items-center gap-1 active:scale-95"

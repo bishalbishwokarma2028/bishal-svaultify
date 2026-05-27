@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useVaultStore } from './store/useVaultStore';
 import { ToastProvider } from './components/ui/Toast';
@@ -25,8 +26,43 @@ import { HiddenVault } from './pages/HiddenVault';
 import { Settings } from './pages/Settings';
 import { MobileScanner } from './components/scanner/MobileScanner';
 
+const AdminBanner: React.FC = () => {
+  const [msg, setMsg] = React.useState('');
+  const [dismissed, setDismissed] = React.useState(false);
+
+  React.useEffect(() => {
+    const active = localStorage.getItem('vaultify-admin-announcement-active');
+    const text = localStorage.getItem('vaultify-admin-announcement');
+    if (active === '1' && text) setMsg(text);
+  }, []);
+
+  if (!msg || dismissed) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="fixed top-0 left-0 right-0 z-[200] bg-amber-500/95 text-amber-950 text-xs font-semibold px-4 py-2.5 flex items-center justify-between gap-3 shadow-lg backdrop-blur-xl"
+    >
+      <span className="flex items-center gap-2">
+        <span className="text-base">📢</span>
+        <span>{msg}</span>
+      </span>
+      <button
+        onClick={() => setDismissed(true)}
+        className="flex-shrink-0 p-1 rounded-lg hover:bg-amber-600/30 transition-colors"
+        aria-label="Dismiss"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </motion.div>
+  );
+};
+
 export const App: React.FC = () => {
-  const { isAuthenticated, login, clearAuth, theme, syncPremiumFromGlobal } = useVaultStore();
+  const { isAuthenticated, login, clearAuth, theme, syncPremiumFromGlobal, syncFromSupabase } = useVaultStore();
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme ?? 'dark');
@@ -58,6 +94,8 @@ export const App: React.FC = () => {
           isPremium: false,
         });
         setTimeout(() => syncPremiumFromGlobal(), 100);
+        // Sync data from Supabase to restore any server-side data
+        setTimeout(() => syncFromSupabase(), 500);
       }
       setAuthLoading(false);
     });
@@ -77,6 +115,8 @@ export const App: React.FC = () => {
           isPremium: false,
         });
         setTimeout(() => syncPremiumFromGlobal(), 100);
+        // Sync data from Supabase — merges server data with local data
+        setTimeout(() => syncFromSupabase(), 800);
       } else if (event === 'SIGNED_OUT') {
         clearAuth();
       }
@@ -113,6 +153,7 @@ export const App: React.FC = () => {
 
   return (
     <ToastProvider>
+      <AdminBanner />
       <Router>
         <Routes>
           <Route path="/admin" element={<Admin />} />

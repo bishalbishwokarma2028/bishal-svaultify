@@ -31,6 +31,7 @@ interface VaultStore {
   submitPremiumPayment: (txId: string) => void;
   approvePayment: () => void;
   syncPremiumFromGlobal: () => void;
+  dataOwnerId: string | null;
   
   folders: Folder[];
   files: FileItem[];
@@ -93,6 +94,7 @@ export const useVaultStore = create<VaultStore>()(
       isPremium: false,
       paymentStatus: 'none',
       premiumTransactionId: '',
+      dataOwnerId: null,
       submitPremiumPayment: (txId) => {
         const user = get().user;
         if (user) {
@@ -128,21 +130,58 @@ export const useVaultStore = create<VaultStore>()(
       sessions: [],
 
       login: (user) => {
-        set({
-          isAuthenticated: true,
-          user,
-          sessions: [
-            {
-              id: 'sess-' + Date.now(),
-              device: 'Web Browser',
-              browser: 'Vaultify Secure Web',
-              ip: '127.0.0.1',
-              lastActive: 'Just now',
-              isCurrent: true,
-              location: 'Local Access'
-            }
-          ]
-        });
+        const currentOwnerId = get().dataOwnerId;
+        
+        if (currentOwnerId && currentOwnerId !== user.id) {
+          // Different user — clear previous user's vault data for privacy
+          set({
+            isAuthenticated: true,
+            user,
+            dataOwnerId: user.id,
+            folders: [],
+            files: [],
+            passwords: [],
+            notes: [],
+            reminders: [],
+            activityLogs: [],
+            emergencyContacts: [],
+            sharedLinks: [],
+            hiddenVaultPin: '',
+            hiddenVaultUnlocked: false,
+            isPremium: false,
+            paymentStatus: 'none',
+            premiumTransactionId: '',
+            sessions: [
+              {
+                id: 'sess-' + Date.now(),
+                device: 'Web Browser',
+                browser: 'Vaultify Secure Web',
+                ip: '127.0.0.1',
+                lastActive: 'Just now',
+                isCurrent: true,
+                location: 'Local Access'
+              }
+            ]
+          });
+        } else {
+          // Same user or first login — preserve existing vault data
+          set({
+            isAuthenticated: true,
+            user,
+            dataOwnerId: user.id,
+            sessions: [
+              {
+                id: 'sess-' + Date.now(),
+                device: 'Web Browser',
+                browser: 'Vaultify Secure Web',
+                ip: '127.0.0.1',
+                lastActive: 'Just now',
+                isCurrent: true,
+                location: 'Local Access'
+              }
+            ]
+          });
+        }
       },
 
       logout: async () => {
@@ -152,8 +191,7 @@ export const useVaultStore = create<VaultStore>()(
       },
 
       clearAuth: () => {
-        // Only clear authentication state — do NOT wipe user data (files, notes, passwords, etc.)
-        // so that when the same user signs back in, all their data is still there.
+        // Keep vault data and dataOwnerId so same user's data persists on re-login
         set({
           isAuthenticated: false,
           user: null,
@@ -258,7 +296,8 @@ export const useVaultStore = create<VaultStore>()(
           try {
             const { data, error } = await supabase.from('files').insert([{
               name: fileData.name, size: fileData.size, type: fileData.type,
-              url: fileData.url || '', folder_id: fileData.folderId, category: fileData.category,
+              url: fileUrl, // Store local URL reference so sync can find content
+              folder_id: fileData.folderId, category: fileData.category,
               tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
               expiry_date: fileData.expiryDate || null, user_id: userId,
             }]).select().single();
@@ -647,24 +686,33 @@ export const useVaultStore = create<VaultStore>()(
             return false;
           }
 
-          const folders: Folder[] = (foldersRes.data || []).map(f => ({
+          // Build sets of Supabase IDs for deduplication
+          const sbFolderIds = new Set((foldersRes.data || []).map((f: any) => f.id));
+          const sbFileIds = new Set((filesRes.data || []).map((f: any) => f.id));
+          const sbPwdIds = new Set((pwdRes.data || []).map((p: any) => p.id));
+          const sbNoteIds = new Set((notesRes.data || []).map((n: any) => n.id));
+          const sbRemIds = new Set((remRes.data || []).map((r: any) => r.id));
+          const sbEcIds = new Set((ecRes.data || []).map((c: any) => c.id));
+
+          // Map Supabase data
+          const sbFolders: Folder[] = (foldersRes.data || []).map((f: any) => ({
             id: f.id, name: f.name, parentId: f.parent_id,
             color: f.color || '#3b82f6', createdAt: f.created_at, updatedAt: f.updated_at
           }));
 
           let totalUsed = 0;
-          const files: FileItem[] = (filesRes.data || []).map(f => {
+          const sbFiles: FileItem[] = (filesRes.data || []).map((f: any) => {
             totalUsed += Number(f.size || 0);
             return {
               id: f.id, name: f.name, size: Number(f.size || 0),
-              type: f.type, url: f.url, folderId: f.folder_id,
+              type: f.type, url: f.url || '', folderId: f.folder_id,
               category: f.category, tags: f.tags || [],
               isStarred: f.is_starred, isArchived: f.is_archived,
               createdAt: f.created_at, updatedAt: f.updated_at, expiryDate: f.expiry_date
             };
           });
 
-          const passwords: PasswordItem[] = (pwdRes.data || []).map(p => ({
+          const sbPasswords: PasswordItem[] = (pwdRes.data || []).map((p: any) => ({
             id: p.id, title: p.title, username: p.username || '',
             passwordEncrypted: p.password_encrypted, url: p.url,
             category: p.category || 'Personal', notes: p.notes,
@@ -672,29 +720,43 @@ export const useVaultStore = create<VaultStore>()(
             updatedAt: p.updated_at, lastUsed: p.last_used
           }));
 
-          const notes: NoteItem[] = (notesRes.data || []).map(n => ({
+          const sbNotes: NoteItem[] = (notesRes.data || []).map((n: any) => ({
             id: n.id, title: n.title, content: n.content,
             category: n.category || 'Personal', isPinned: n.is_pinned || false,
             isLocked: n.is_locked || false, tags: n.tags || [],
             createdAt: n.created_at, updatedAt: n.updated_at
           }));
 
-          const reminders: ReminderItem[] = (remRes.data || []).map(r => ({
+          const sbReminders: ReminderItem[] = (remRes.data || []).map((r: any) => ({
             id: r.id, title: r.title, itemId: r.item_id,
             itemType: r.item_type, expiryDate: r.expiry_date,
             notifyBeforeDays: r.notify_before_days, isResolved: r.is_resolved,
             createdAt: r.created_at
           }));
 
-          const emergencyContacts: EmergencyContact[] = (ecRes.data || []).map(c => ({
+          const sbEmergencyContacts: EmergencyContact[] = (ecRes.data || []).map((c: any) => ({
             id: c.id, name: c.name, email: c.email, phone: c.phone,
             relationship: c.relationship, accessDelayHours: c.access_delay_hours,
             status: c.status, createdAt: c.created_at
           }));
 
-          set((state) => ({
-            folders, files, passwords, notes, reminders, emergencyContacts,
-            user: state.user ? { ...state.user, usedStorage: totalUsed } : null
+          // Merge: combine Supabase data with local-only items
+          const state = get();
+          const localOnlyFolders = state.folders.filter(f => !sbFolderIds.has(f.id));
+          const localOnlyFiles = state.files.filter(f => !sbFileIds.has(f.id));
+          const localOnlyPasswords = state.passwords.filter(p => !sbPwdIds.has(p.id));
+          const localOnlyNotes = state.notes.filter(n => !sbNoteIds.has(n.id));
+          const localOnlyReminders = state.reminders.filter(r => !sbRemIds.has(r.id));
+          const localOnlyContacts = state.emergencyContacts.filter(c => !sbEcIds.has(c.id));
+
+          set((s) => ({
+            folders: [...sbFolders, ...localOnlyFolders],
+            files: [...sbFiles, ...localOnlyFiles],
+            passwords: [...sbPasswords, ...localOnlyPasswords],
+            notes: [...sbNotes, ...localOnlyNotes],
+            reminders: [...sbReminders, ...localOnlyReminders],
+            emergencyContacts: [...sbEmergencyContacts, ...localOnlyContacts],
+            user: s.user ? { ...s.user, usedStorage: totalUsed } : null
           }));
 
           return true;
@@ -718,6 +780,7 @@ export const useVaultStore = create<VaultStore>()(
         isPremium: state.isPremium,
         paymentStatus: state.paymentStatus,
         premiumTransactionId: state.premiumTransactionId,
+        dataOwnerId: state.dataOwnerId,
       }),
     }
   )
