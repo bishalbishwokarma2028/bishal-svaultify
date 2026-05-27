@@ -84,7 +84,7 @@ export const Admin: React.FC = () => {
     e.preventDefault();
     if (
       email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase() &&
-      password === ADMIN_PASSWORD
+      password.trim() === ADMIN_PASSWORD.trim()
     ) {
       setIsLoggedIn(true);
       setLoginError('');

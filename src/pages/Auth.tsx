@@ -18,8 +18,16 @@ export const Auth: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const ADMIN_EMAIL = 'bishalbishwokarma2028@gmail.com';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Admin credentials → redirect to admin panel instead of Supabase auth
+    if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      navigate('/admin');
+      return;
+    }
 
     if (!email || !email.includes('@')) {
       toast({ title: 'Invalid Email', description: 'Please enter a valid email address.', type: 'error' });
@@ -266,9 +274,12 @@ export const Auth: React.FC = () => {
           <div className="pt-2 border-t border-white/5 mt-2">
             <a
               href="/admin"
-              className="text-[10px] text-gray-600 hover:text-blue-400 transition-colors"
+              className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-blue-400 transition-colors font-medium"
             >
-              Admin Panel →
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              Admin Panel Access →
             </a>
           </div>
         </div>
