@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ShieldCheck, Lock, Mail, Key, ArrowRight, Eye, EyeOff, Fingerprint } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, Key, ArrowRight, Eye, EyeOff, Fingerprint, ExternalLink, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
@@ -12,10 +12,12 @@ function base64urlToUint8Array(base64url: string): Uint8Array {
   const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+function isInsideIframe(): boolean {
+  try { return window.self !== window.top; } catch { return true; }
 }
 
 export const Auth: React.FC = () => {
@@ -25,9 +27,10 @@ export const Auth: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricEmail, setBiometricEmail] = useState('');
   const [isBiometricLoading, setIsBiometricLoading] = useState(false);
+  const [inIframe] = useState(isInsideIframe);
 
   const { login } = useVaultStore();
   const navigate = useNavigate();
@@ -39,15 +42,14 @@ export const Auth: React.FC = () => {
   useEffect(() => {
     const enabled = localStorage.getItem('vaultify-biometric-enabled') === 'true';
     const storedEmail = localStorage.getItem('vaultify-biometric-email') || '';
-    const credId = localStorage.getItem('vaultify-biometric-credential-id') || '';
-    const refreshToken = localStorage.getItem('vaultify-biometric-refresh-token') || '';
-    if (enabled && storedEmail && credId && refreshToken) {
-      setBiometricAvailable(true);
+    // Show button if enabled + email stored, regardless of which tokens are present
+    if (enabled && storedEmail) {
+      setBiometricEnabled(true);
       setBiometricEmail(storedEmail);
     }
   }, []);
 
-  const doLoginFromSession = async (session: { user: any }) => {
+  const doLoginFromSession = async (session: { user: any; refresh_token?: string }) => {
     const u = session.user;
     const profile = {
       id: u.id,
@@ -61,95 +63,108 @@ export const Auth: React.FC = () => {
       isPremium: true,
     };
     login(profile);
-    toast({
-      title: 'Biometric Sign In Successful',
-      description: `Welcome back, ${profile.fullName}!`,
-      type: 'success',
-    });
+    toast({ title: 'Welcome back!', description: `Signed in as ${profile.fullName}`, type: 'success' });
     navigate('/dashboard');
   };
 
   const handleBiometricLogin = async () => {
     if (!supabase) {
-      toast({ title: 'Service Unavailable', description: 'Authentication service not configured.', type: 'error' });
+      toast({ title: 'Service Unavailable', description: 'Auth service not configured.', type: 'error' });
+      return;
+    }
+
+    if (inIframe) {
+      toast({
+        title: 'Open App in Browser',
+        description: 'Biometric sign-in is blocked inside preview frames. Open the app URL directly in your browser.',
+        type: 'error',
+      });
       return;
     }
 
     const credentialIdB64 = localStorage.getItem('vaultify-biometric-credential-id');
     const storedRefreshToken = localStorage.getItem('vaultify-biometric-refresh-token');
 
-    if (!credentialIdB64 || !storedRefreshToken) {
+    // If no credential ID, the device was never actually registered — guide to re-setup
+    if (!credentialIdB64) {
       toast({
-        title: 'Biometric Not Set Up',
-        description: 'Please sign in with your password first, then enable biometric in Settings.',
+        title: 'Re-setup Required',
+        description: 'Please sign in with your password, then go to Settings → Security to re-enable biometric.',
         type: 'error',
       });
+      setEmail(biometricEmail);
       return;
     }
 
     setIsBiometricLoading(true);
     try {
-      // Step 1: Ask the device to verify ownership via its built-in lock
-      // (fingerprint / face / PIN — whatever the device supports)
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
       const credentialId = base64urlToUint8Array(credentialIdB64).buffer;
 
+      // Ask device to verify — this triggers fingerprint / face / PIN on the device
       await navigator.credentials.get({
         publicKey: {
           challenge,
-          allowCredentials: [
-            {
-              type: 'public-key',
-              id: credentialId,
-              transports: ['internal'] as AuthenticatorTransport[],
-            },
-          ],
+          allowCredentials: [{ type: 'public-key', id: credentialId, transports: ['internal'] as AuthenticatorTransport[] }],
           userVerification: 'required',
           rpId: window.location.hostname,
           timeout: 60000,
         },
       });
 
-      // Step 2: Device unlocked — use the stored refresh token to sign back into Supabase
-      const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: storedRefreshToken,
-      });
+      // Device verified — now restore the Supabase session
+      // Priority 1: use stored refresh token (most reliable)
+      if (storedRefreshToken) {
+        const { data, error } = await supabase.auth.refreshSession({ refresh_token: storedRefreshToken });
+        if (!error && data.session?.user) {
+          if (data.session.refresh_token) {
+            localStorage.setItem('vaultify-biometric-refresh-token', data.session.refresh_token);
+          }
+          await doLoginFromSession(data.session);
+          return;
+        }
+      }
 
-      if (error || !data.session?.user) {
-        // Refresh token expired (happens after ~60 days of no sign-in)
-        localStorage.removeItem('vaultify-biometric-refresh-token');
-        toast({
-          title: 'Session Expired',
-          description: 'Please sign in with your password once to relink biometric access.',
-          type: 'error',
-        });
-        setEmail(biometricEmail);
+      // Priority 2: existing in-memory session (user just signed in this tab)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await doLoginFromSession(session);
         return;
       }
 
-      // Rotate the stored refresh token (Supabase issues a new one each time)
-      if (data.session.refresh_token) {
-        localStorage.setItem('vaultify-biometric-refresh-token', data.session.refresh_token);
-      }
-
-      await doLoginFromSession(data.session);
+      // Refresh token expired — need to re-login once manually
+      localStorage.removeItem('vaultify-biometric-refresh-token');
+      toast({
+        title: 'Session Expired',
+        description: 'Your login session expired (usually after 60 days). Sign in once with your password to relink biometric.',
+        type: 'error',
+      });
+      setEmail(biometricEmail);
     } catch (err: any) {
-      const msg = (err?.message || err?.name || '').toLowerCase();
-      if (msg.includes('cancel') || msg.includes('notallowed') || msg.includes('abort') || msg.includes('user')) {
-        toast({ title: 'Cancelled', description: 'Verification was cancelled.', type: 'info' });
-      } else if (msg.includes('security') || msg.includes('invalid') || msg.includes('unknown') || msg.includes('not found')) {
-        // Credential not found — likely opened from a different URL than where it was registered
+      const name = err?.name || '';
+      const msg = (err?.message || '').toLowerCase();
+
+      if (name === 'NotAllowedError' || msg.includes('cancel') || msg.includes('abort') || msg.includes('user')) {
+        toast({ title: 'Cancelled', description: 'Device verification was cancelled. Try again.', type: 'info' });
+      } else if (name === 'SecurityError' || msg.includes('rpid') || msg.includes('origin') || msg.includes('security')) {
+        // This happens when the credential was registered on a different domain
+        toast({
+          title: 'Domain Mismatch',
+          description: 'Credential was registered on a different URL. Please disable then re-enable biometric in Settings.',
+          type: 'error',
+        });
+      } else if (name === 'InvalidStateError' || msg.includes('not found') || msg.includes('no credential')) {
         toast({
           title: 'Credential Not Found',
-          description: 'This can happen if you access the app from a different link. Please disable and re-enable biometric in Settings.',
+          description: 'Your device cannot find the biometric key. Please re-setup biometric in Settings.',
           type: 'error',
         });
       } else {
         toast({
-          title: 'Device Unlock Failed',
-          description: 'Could not verify your identity. Please use email and password.',
+          title: 'Verification Failed',
+          description: `Could not verify: ${err?.message || 'unknown error'}. Use email and password instead.`,
           type: 'error',
         });
       }
@@ -184,12 +199,11 @@ export const Auth: React.FC = () => {
     }
 
     setIsLoading(true);
-
     try {
       if (mode === 'forgot') {
         const { error } = await supabase.auth.resetPasswordForEmail(email);
         if (error) throw error;
-        toast({ title: 'Recovery Email Sent', description: 'Check your inbox for the password reset link.', type: 'success' });
+        toast({ title: 'Recovery Email Sent', description: 'Check your inbox for the reset link.', type: 'success' });
         setMode('login');
         setIsLoading(false);
         return;
@@ -201,47 +215,32 @@ export const Auth: React.FC = () => {
           password,
           options: { data: { full_name: fullName || email.split('@')[0] } },
         });
-
         if (error) throw error;
 
         if (data.user && data.session) {
           const profile = {
-            id: data.user.id,
-            email: data.user.email!,
-            fullName: fullName || email.split('@')[0],
-            securityScore: 100,
-            totalStorageLimit: 15 * 1024 * 1024 * 1024,
-            usedStorage: 0,
-            createdAt: new Date().toISOString(),
-            isPremium: true,
+            id: data.user.id, email: data.user.email!, fullName: fullName || email.split('@')[0],
+            securityScore: 100, totalStorageLimit: 15 * 1024 * 1024 * 1024, usedStorage: 0,
+            createdAt: new Date().toISOString(), isPremium: true,
           };
           login(profile);
           registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
           toast({ title: 'Account Created!', description: 'Welcome to your secure vault.', type: 'success' });
           navigate('/dashboard');
         } else if (data.user && !data.session) {
-          toast({
-            title: 'Check Your Email',
-            description: `A confirmation link was sent to ${email}. Click it to activate your account, then sign in.`,
-            type: 'success',
-          });
+          toast({ title: 'Check Your Email', description: `Confirmation sent to ${email}. Click it, then sign in.`, type: 'success' });
           setMode('login');
           setPassword('');
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-
         if (data.user) {
           const profile = {
-            id: data.user.id,
-            email: data.user.email!,
+            id: data.user.id, email: data.user.email!,
             fullName: data.user.user_metadata?.full_name || email.split('@')[0],
-            securityScore: 100,
-            totalStorageLimit: 15 * 1024 * 1024 * 1024,
-            usedStorage: 0,
-            createdAt: data.user.created_at,
-            isPremium: true,
+            securityScore: 100, totalStorageLimit: 15 * 1024 * 1024 * 1024,
+            usedStorage: 0, createdAt: data.user.created_at, isPremium: true,
           };
           login(profile);
           registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
@@ -250,8 +249,7 @@ export const Auth: React.FC = () => {
         }
       }
     } catch (err: any) {
-      const msg = err?.message || 'Something went wrong. Please try again.';
-      toast({ title: 'Authentication Error', description: msg, type: 'error' });
+      toast({ title: 'Authentication Error', description: err?.message || 'Something went wrong.', type: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -284,8 +282,8 @@ export const Auth: React.FC = () => {
             {mode === 'forgot' && 'Reset your Password'}
           </h2>
           <p className="text-xs text-gray-400">
-            {mode === 'login' && 'Enter your email and password to access your vault'}
-            {mode === 'signup' && 'Create an account to start storing your files securely'}
+            {mode === 'login' && 'Enter your credentials to access your vault'}
+            {mode === 'signup' && 'Create an account to start storing files securely'}
             {mode === 'forgot' && 'We will send you a link to reset your password'}
           </p>
         </div>
@@ -296,30 +294,58 @@ export const Auth: React.FC = () => {
             <span>Secured by Supabase</span>
           </div>
 
-          {/* Biometric sign-in — shown at top on login mode when enrolled */}
-          {mode === 'login' && biometricAvailable && (
+          {/* Biometric sign-in block — only on login mode */}
+          {mode === 'login' && biometricEnabled && (
             <div className="mb-5">
-              <button
-                type="button"
-                onClick={handleBiometricLogin}
-                disabled={isBiometricLoading}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 border border-emerald-500/30 hover:border-emerald-500/60 text-emerald-300 font-bold text-sm transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98]"
-              >
-                {isBiometricLoading ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying... unlock your device</span>
-                  </>
-                ) : (
-                  <>
-                    <Fingerprint className="w-5 h-5" />
-                    <span>Sign in with Fingerprint / Device Lock</span>
-                  </>
-                )}
-              </button>
-              <p className="text-center text-[10px] text-gray-500 mt-1.5 leading-relaxed">
-                Your device will ask for fingerprint, face, or PIN &mdash; use any to sign in.<br />
-                <span className="text-gray-600">Account: {biometricEmail}</span>
+              {inIframe ? (
+                /* ── Inside preview/iframe: WebAuthn is blocked ── */
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-300">Biometric blocked in preview</p>
+                      <p className="text-[11px] text-amber-400/80 mt-0.5 leading-relaxed">
+                        Open the app directly in your browser to use fingerprint / device lock sign-in.
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/30 transition-all"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open App in Browser
+                  </a>
+                </div>
+              ) : (
+                /* ── Not in iframe: show biometric button normally ── */
+                <button
+                  type="button"
+                  onClick={handleBiometricLogin}
+                  disabled={isBiometricLoading}
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 border border-emerald-500/30 hover:border-emerald-500/60 text-emerald-300 font-bold text-sm transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98]"
+                >
+                  {isBiometricLoading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                      <span>Waiting for device verification...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Fingerprint className="w-5 h-5" />
+                      <span>Sign in with Fingerprint / Device Lock</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <p className="text-center text-[10px] text-gray-600 mt-2 leading-relaxed">
+                {inIframe
+                  ? `Biometric set up for: ${biometricEmail}`
+                  : <>Your device will ask for fingerprint, face, or PIN.<br /><span className="text-gray-700">Account: {biometricEmail}</span></>
+                }
               </p>
 
               <div className="flex items-center gap-3 mt-4">
@@ -364,11 +390,7 @@ export const Auth: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-gray-300">Password</label>
                   {mode === 'login' && (
-                    <button
-                      type="button"
-                      onClick={() => setMode('forgot')}
-                      className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
-                    >
+                    <button type="button" onClick={() => setMode('forgot')} className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">
                       Forgot password?
                     </button>
                   )}
@@ -384,17 +406,11 @@ export const Auth: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full bg-white/[0.03] focus:bg-white/[0.06] text-white text-sm rounded-xl pl-10 pr-10 py-2.5 border border-white/10 focus:border-blue-500/50 outline-none transition-all placeholder:text-gray-600"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
-                  >
+                  <button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {mode === 'signup' && (
-                  <p className="text-[10px] text-gray-500 mt-1">Must be at least 6 characters.</p>
-                )}
+                {mode === 'signup' && <p className="text-[10px] text-gray-500 mt-1">Must be at least 6 characters.</p>}
               </div>
             )}
 
@@ -407,11 +423,7 @@ export const Auth: React.FC = () => {
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>
-                    {mode === 'login' && 'Sign In'}
-                    {mode === 'signup' && 'Create Account'}
-                    {mode === 'forgot' && 'Send Reset Link'}
-                  </span>
+                  <span>{mode === 'login' && 'Sign In'}{mode === 'signup' && 'Create Account'}{mode === 'forgot' && 'Send Reset Link'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -420,27 +432,18 @@ export const Auth: React.FC = () => {
 
           <div className="mt-6 pt-4 border-t border-white/5 text-center text-xs text-gray-400">
             {mode === 'login' && (
-              <p>
-                Don't have an account?{' '}
-                <button onClick={() => setMode('signup')} className="text-blue-400 hover:text-blue-300 font-bold">
-                  Sign up for free
-                </button>
+              <p>Don't have an account?{' '}
+                <button onClick={() => setMode('signup')} className="text-blue-400 hover:text-blue-300 font-bold">Sign up for free</button>
               </p>
             )}
             {mode === 'signup' && (
-              <p>
-                Already have an account?{' '}
-                <button onClick={() => setMode('login')} className="text-blue-400 hover:text-blue-300 font-bold">
-                  Sign in
-                </button>
+              <p>Already have an account?{' '}
+                <button onClick={() => setMode('login')} className="text-blue-400 hover:text-blue-300 font-bold">Sign in</button>
               </p>
             )}
             {mode === 'forgot' && (
-              <p>
-                Remembered your password?{' '}
-                <button onClick={() => setMode('login')} className="text-blue-400 hover:text-blue-300 font-bold">
-                  Back to sign in
-                </button>
+              <p>Remembered your password?{' '}
+                <button onClick={() => setMode('login')} className="text-blue-400 hover:text-blue-300 font-bold">Back to sign in</button>
               </p>
             )}
           </div>
@@ -449,10 +452,8 @@ export const Auth: React.FC = () => {
         <div className="text-center text-[10px] text-gray-600 space-y-1">
           <p>All data is stored privately on your device.</p>
           <div className="flex items-center justify-center gap-3">
-            <span>End-to-End Private</span>
-            <span>•</span>
-            <span>Your Data, Your Control</span>
-            <span>•</span>
+            <span>End-to-End Private</span><span>•</span>
+            <span>Your Data, Your Control</span><span>•</span>
             <span>AES-256 Encrypted</span>
           </div>
         </div>

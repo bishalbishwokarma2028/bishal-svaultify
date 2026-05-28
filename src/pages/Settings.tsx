@@ -87,8 +87,8 @@ export const Settings: React.FC = () => {
 
   // Biometric state
   const [biometricEnabled, setBiometricEnabled] = useState(() => localStorage.getItem('vaultify-biometric-enabled') === 'true');
-  const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricEnrolling, setBiometricEnrolling] = useState(false);
+  const [inIframe] = useState(() => { try { return window.self !== window.top; } catch { return true; } });
 
   // Support chat state
   const [chatMessages, setChatMessages] = useState<SupportMessage[]>([]);
@@ -258,27 +258,30 @@ export const Settings: React.FC = () => {
   };
 
   const handleEnableBiometric = async () => {
+    if (inIframe) {
+      toast({
+        title: 'Open App in Browser',
+        description: 'Biometric setup is blocked inside preview frames. Open the app URL directly in your browser tab.',
+        type: 'error',
+      });
+      return;
+    }
+
     if (!window.PublicKeyCredential) {
-      toast({ title: 'Not Supported', description: 'Your browser does not support biometric login. Try Chrome on Android or Safari on iPhone.', type: 'error' });
+      toast({
+        title: 'Not Supported',
+        description: 'Your browser does not support this. Please use Chrome on Android or Safari on iPhone/iPad.',
+        type: 'error',
+      });
       return;
     }
 
     setBiometricEnrolling(true);
     try {
-      const isPlatformAvailable = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-      if (!isPlatformAvailable) {
-        toast({
-          title: 'No Biometric Found',
-          description: 'No fingerprint or face lock is set up on this device. Please set one up in your device settings first.',
-          type: 'error',
-        });
-        setBiometricEnrolling(false);
-        return;
-      }
-
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
+      // Attempt credential creation — the device will show its unlock prompt
       const credential = await navigator.credentials.create({
         publicKey: {
           challenge,
@@ -301,15 +304,16 @@ export const Settings: React.FC = () => {
         },
       }) as PublicKeyCredential | null;
 
-      if (!credential) throw new Error('No credential returned');
+      if (!credential) throw new Error('No credential returned by device');
 
+      // Store credential ID as base64url
       const rawId = credential.rawId;
       const bytes = new Uint8Array(rawId);
       let binary = '';
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       const credId = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
-      // Save the Supabase refresh token so we can restore the session after device unlock
+      // Also store the current Supabase refresh token — needed to restore login after device unlock
       let refreshToken = '';
       if (supabase) {
         const { data: sessionData } = await supabase.auth.getSession();
@@ -322,20 +326,35 @@ export const Settings: React.FC = () => {
       if (refreshToken) {
         localStorage.setItem('vaultify-biometric-refresh-token', refreshToken);
       }
+
       setBiometricEnabled(true);
       toast({
         title: 'Biometric Enabled!',
-        description: 'You can now sign in with your fingerprint or face.',
+        description: 'Sign-in with device lock is now active. You can use it from the login screen.',
         type: 'success',
       });
     } catch (err: any) {
-      const msg = (err?.message || err?.name || '').toLowerCase();
-      if (msg.includes('cancel') || msg.includes('notallowed') || msg.includes('abort')) {
-        toast({ title: 'Setup Cancelled', description: 'Biometric setup was cancelled. Try again when ready.', type: 'info' });
+      const errName = err?.name || '';
+      const errMsg = (err?.message || '').toLowerCase();
+
+      if (errName === 'NotAllowedError' || errMsg.includes('cancel') || errMsg.includes('abort') || errMsg.includes('user')) {
+        toast({ title: 'Cancelled', description: 'Setup was cancelled — tap the button again when ready.', type: 'info' });
+      } else if (errName === 'SecurityError' || errMsg.includes('security') || errMsg.includes('iframe') || errMsg.includes('origin')) {
+        toast({
+          title: 'Blocked by Browser',
+          description: 'This page is inside a frame and WebAuthn is blocked. Open the app URL directly in your browser.',
+          type: 'error',
+        });
+      } else if (errName === 'NotSupportedError') {
+        toast({
+          title: 'Not Supported',
+          description: 'Your device or browser does not support this. Try Chrome on Android or Safari on iOS.',
+          type: 'error',
+        });
       } else {
         toast({
           title: 'Setup Failed',
-          description: 'Could not set up biometric. Make sure your device has fingerprint or face lock configured.',
+          description: `Error: ${err?.name || 'unknown'} — ${err?.message || 'Please try again in your device browser.'}`,
           type: 'error',
         });
       }
@@ -616,12 +635,36 @@ export const Settings: React.FC = () => {
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <Fingerprint className="w-5 h-5 text-blue-400" />
-                    Fingerprint & Face Login
+                    Fingerprint & Device Lock Sign-In
                   </h3>
                   <p className="text-xs text-gray-400 mt-1">
-                    Sign in instantly using your device's fingerprint scanner or face recognition — no password needed.
+                    Skip typing your password — sign in using your device's fingerprint, face, or screen lock.
                   </p>
                 </div>
+
+                {/* Iframe warning — WebAuthn is blocked inside preview frames */}
+                {inIframe && (
+                  <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-bold text-amber-300">Must be opened in your browser</p>
+                        <p className="text-[11px] text-amber-400/80 mt-0.5 leading-relaxed">
+                          Biometric setup is blocked by the browser when running inside a preview frame. Open the app directly in Chrome or Safari to set it up.
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href={window.location.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/30 transition-all"
+                    >
+                      <Monitor className="w-3.5 h-3.5" />
+                      Open App in Browser
+                    </a>
+                  </div>
+                )}
 
                 {/* Status card */}
                 <div className={`p-4 rounded-2xl border flex items-center gap-4 ${biometricEnabled ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-white/[0.02] border-white/5'}`}>
@@ -630,25 +673,25 @@ export const Settings: React.FC = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-bold ${biometricEnabled ? 'text-emerald-300' : 'text-white'}`}>
-                      {biometricEnabled ? 'Biometric Sign-In Active' : 'Not Set Up Yet'}
+                      {biometricEnabled ? 'Device Lock Sign-In Active' : 'Not Set Up Yet'}
                     </p>
                     <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
                       {biometricEnabled
-                        ? `Linked to ${user?.email}. You can sign in from the login screen using your fingerprint or face.`
-                        : 'Follow the steps below to enable quick sign-in with your fingerprint or face.'}
+                        ? `Linked to ${user?.email}. Sign in from the login screen using your device lock.`
+                        : 'Set up once below — works with fingerprint, face ID, or your PIN.'}
                     </p>
                   </div>
                   <div className={`w-3 h-3 rounded-full flex-shrink-0 ${biometricEnabled ? 'bg-emerald-400 shadow-lg shadow-emerald-500/40' : 'bg-gray-600'}`} />
                 </div>
 
-                {/* Steps guide — only shown when not yet enabled */}
-                {!biometricEnabled && (
+                {/* Steps guide — only when not yet enabled and not in iframe */}
+                {!biometricEnabled && !inIframe && (
                   <div className="space-y-2">
                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">How it works</p>
                     {[
-                      { step: '1', text: 'Tap the button below — your device will show a "Confirm screen lock" or passkey prompt.' },
-                      { step: '2', text: 'Use fingerprint, face, or your PIN/password to confirm. Fingerprint works on the lock screen too — just tap the sensor.' },
-                      { step: '3', text: 'Once done, the Login screen will show a quick-access button to sign in without typing your password.' },
+                      { step: '1', text: 'Tap "Set Up" below — your phone will show a security prompt.' },
+                      { step: '2', text: 'Use fingerprint, face scan, or your PIN to confirm. All methods work.' },
+                      { step: '3', text: 'Done — the login screen will show a quick sign-in button next time.' },
                     ].map(({ step, text }) => (
                       <div key={step} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
                         <div className="w-5 h-5 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -666,7 +709,7 @@ export const Settings: React.FC = () => {
                     <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                       <p className="text-[11px] text-emerald-300">
-                        Biometric sign-in is active. Go to the login screen to use it.
+                        Active — use the fingerprint button on the login screen.
                       </p>
                     </div>
                     <button
@@ -674,7 +717,7 @@ export const Settings: React.FC = () => {
                       className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold transition-all flex items-center justify-center gap-2"
                     >
                       <X className="w-3.5 h-3.5" />
-                      Remove Biometric Sign-In
+                      Remove Device Lock Sign-In
                     </button>
                   </div>
                 ) : (
@@ -686,12 +729,12 @@ export const Settings: React.FC = () => {
                     {biometricEnrolling ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Waiting for your fingerprint / face...</span>
+                        <span>Waiting — verify on your device...</span>
                       </>
                     ) : (
                       <>
                         <Fingerprint className="w-4 h-4" />
-                        <span>Set Up Fingerprint / Face Login</span>
+                        <span>{inIframe ? 'Open in Browser to Set Up' : 'Set Up Fingerprint / Device Lock'}</span>
                       </>
                     )}
                   </button>
