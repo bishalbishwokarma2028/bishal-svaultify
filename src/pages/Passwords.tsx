@@ -102,6 +102,7 @@ export const Passwords: React.FC = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
+  const [biometricUnlocking, setBiometricUnlocking] = useState<string | null>(null);
 
   // New Password state
   const [title, setTitle] = useState('');
