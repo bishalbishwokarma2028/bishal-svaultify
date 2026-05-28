@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import heic2any from 'heic2any';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera,
@@ -273,13 +274,60 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
     }, 400);
   };
 
-  const handleUploadPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
+
+    const isHeic =
+      file.type === 'image/heic' ||
+      file.type === 'image/heif' ||
+      file.name.toLowerCase().endsWith('.heic') ||
+      file.name.toLowerCase().endsWith('.heif');
+
+    if (!file.type.startsWith('image/') && !isHeic) {
       toast({ title: 'Invalid File', description: 'Please select an image.', type: 'error' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    if (isHeic) {
+      setIsProcessing(true);
+      toast({ title: 'Converting HEIC...', description: 'Please wait while we convert the image.', type: 'info' });
+      try {
+        const converted = await heic2any({
+          blob: file,
+          toType: 'image/jpeg',
+          quality: 0.92,
+        });
+        const blob = Array.isArray(converted) ? converted[0] : converted;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const dataUrl = ev.target?.result as string;
+          setCapturedImage(dataUrl);
+          setProcessedImage(null);
+          setRotation(0);
+          setBrightness(100);
+          setContrast(110);
+          setFilter('magic');
+          stopCamera();
+          setStep('adjust');
+          setIsProcessing(false);
+          toast({ title: 'Photo Loaded', description: 'HEIC converted. Adjust frame then enhance.', type: 'success' });
+        };
+        reader.onerror = () => {
+          setIsProcessing(false);
+          toast({ title: 'Conversion Failed', description: 'Could not read the converted image.', type: 'error' });
+        };
+        reader.readAsDataURL(blob);
+      } catch {
+        setIsProcessing(false);
+        toast({ title: 'HEIC Conversion Failed', description: 'Unable to convert this HEIC file. Try saving it as JPG first.', type: 'error' });
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
@@ -294,7 +342,6 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
       toast({ title: 'Photo Loaded', description: 'Adjust frame then enhance.', type: 'success' });
     };
     reader.readAsDataURL(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleConfirmBorders = async () => {

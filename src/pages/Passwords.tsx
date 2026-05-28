@@ -212,12 +212,13 @@ export const Passwords: React.FC = () => {
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (title && passwordEncrypted) {
+      const resolvedCategory = (selectedGroup !== 'All' && selectedGroup !== 'Others') ? selectedGroup : 'Personal';
       await addPassword({
         title,
         username,
         passwordEncrypted,
         url: url || undefined,
-        category: 'Personal',
+        category: resolvedCategory,
         notes: notes || undefined,
         strength: checkStrength(passwordEncrypted)
       });
@@ -297,6 +298,33 @@ export const Passwords: React.FC = () => {
         <button
           onClick={() => {
             handleGenerate();
+            // Pre-fill title with selected group keyword so password lands in the right group
+            if (selectedGroup !== 'All' && selectedGroup !== 'Others') {
+              const groupDef = PREDEFINED_GROUPS.find(g => g.label === selectedGroup);
+              if (groupDef) {
+                setTitle(groupDef.label);
+                const urlMap: Record<string, string> = {
+                  'Facebook': 'https://facebook.com',
+                  'Instagram': 'https://instagram.com',
+                  'Gmail / Google': 'https://gmail.com',
+                  'Twitter / X': 'https://x.com',
+                  'WhatsApp': 'https://web.whatsapp.com',
+                  'TikTok': 'https://tiktok.com',
+                  'LinkedIn': 'https://linkedin.com',
+                  'Netflix': 'https://netflix.com',
+                  'Gaming': '',
+                  'WiFi': '',
+                  'Bank / Finance': '',
+                  'Wallet / Cards': '',
+                  'Shopping': '',
+                  'Work / Tools': '',
+                };
+                setUrl(urlMap[selectedGroup] || '');
+              }
+            } else {
+              setTitle('');
+              setUrl('');
+            }
             setShowAddModal(true);
           }}
           className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-lg glow-blue flex items-center gap-1.5 self-start sm:self-auto"
@@ -638,10 +666,20 @@ export const Passwords: React.FC = () => {
           
           <div className="relative w-full max-w-lg glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl z-10 space-y-6 my-8">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-purple-400" />
-                <span>Save a Password</span>
-              </h3>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-purple-400" />
+                  <span>Save a Password</span>
+                </h3>
+                {selectedGroup !== 'All' && selectedGroup !== 'Others' && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[10px] text-gray-400">Saving to:</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/20">
+                      {PREDEFINED_GROUPS.find(g => g.label === selectedGroup)?.emoji} {selectedGroup}
+                    </span>
+                  </div>
+                )}
+              </div>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-white">✕</button>
             </div>
 

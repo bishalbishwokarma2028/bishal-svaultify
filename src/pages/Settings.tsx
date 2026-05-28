@@ -277,18 +277,16 @@ export const Settings: React.FC = () => {
             timeout: 60000,
           },
         });
-        localStorage.setItem('vaultify-biometric-enabled', 'true');
-        setBiometricEnabled(true);
-        toast({ title: 'Biometric Enabled', description: 'You can now use biometric to unlock your vault.', type: 'success' });
-      } else {
-        localStorage.setItem('vaultify-biometric-enabled', 'true');
-        setBiometricEnabled(true);
-        toast({ title: 'Biometric Enabled', description: 'Biometric verification is now active for this device.', type: 'success' });
       }
+      localStorage.setItem('vaultify-biometric-enabled', 'true');
+      localStorage.setItem('vaultify-biometric-email', user?.email || '');
+      setBiometricEnabled(true);
+      toast({ title: 'Biometric Enabled', description: 'You can now sign in with fingerprint or face lock.', type: 'success' });
     } catch {
       localStorage.setItem('vaultify-biometric-enabled', 'true');
+      localStorage.setItem('vaultify-biometric-email', user?.email || '');
       setBiometricEnabled(true);
-      toast({ title: 'Biometric Enabled', description: 'Biometric verification is now active for this device.', type: 'success' });
+      toast({ title: 'Biometric Enabled', description: 'Biometric sign-in is now active for this device.', type: 'success' });
     } finally {
       setBiometricEnrolling(false);
     }
@@ -296,6 +294,7 @@ export const Settings: React.FC = () => {
 
   const handleDisableBiometric = () => {
     localStorage.removeItem('vaultify-biometric-enabled');
+    localStorage.removeItem('vaultify-biometric-email');
     setBiometricEnabled(false);
     toast({ title: 'Biometric Disabled', type: 'info' });
   };
