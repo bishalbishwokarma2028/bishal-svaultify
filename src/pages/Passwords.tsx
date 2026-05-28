@@ -10,7 +10,7 @@ import {
   Sparkles, 
   Trash2, 
   ExternalLink, 
-  Fingerprint,
+
   Pencil,
   LayoutGrid,
   ArrowLeft,
@@ -102,7 +102,6 @@ export const Passwords: React.FC = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
-  const [biometricUnlocking, setBiometricUnlocking] = useState<string | null>(null);
 
   // New Password state
   const [title, setTitle] = useState('');
@@ -616,48 +615,6 @@ export const Passwords: React.FC = () => {
         </div>
         </div>
       </div>
-
-      {/* BIOMETRIC UNLOCK MODAL */}
-      <AnimatePresence>
-        {biometricUnlocking && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              className="fixed inset-0 bg-black/80 backdrop-blur-md"
-            />
-
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-full max-w-sm glass-panel-premium rounded-3xl p-8 border border-white/10 shadow-2xl text-center space-y-6 z-10"
-            >
-              <div className="w-20 h-20 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center mx-auto relative">
-                <span className="absolute inset-0 rounded-full border border-blue-500/40 animate-ping" />
-                <Fingerprint className="w-10 h-10 text-blue-400 animate-pulse" />
-              </div>
-
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-white">Unlocking Password</h3>
-                <p className="text-xs text-gray-400">
-                  Verifying your secure access...
-                </p>
-              </div>
-
-              <div className="w-full bg-gray-800 h-1 rounded-full overflow-hidden">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: '100%' }}
-                  transition={{ duration: 0.8 }}
-                  className="bg-blue-500 h-full"
-                />
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* ADD MODAL */}
       {showAddModal && (
