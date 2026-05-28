@@ -33,7 +33,7 @@ import { useVaultStore } from '../store/useVaultStore';
 import { CategoryType, FileItem } from '../types';
 import { useToast } from '../components/ui/Toast';
 import { Tabs } from '../components/ui/Tabs';
-import { getFileContent, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
+import { getFileContentUrl, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
 
 const getFileIcon = (type: string) => {
   if (type.startsWith('image/')) return <Image className="w-5 h-5" />;
@@ -44,13 +44,19 @@ const getFileIcon = (type: string) => {
   return <File className="w-5 h-5" />;
 };
 
-const readFileAsDataUrl = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+const convertHeicToJpeg = async (file: File): Promise<File> => {
+  const isHeic = file.type === 'image/heic' || file.type === 'image/heif' ||
+    file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+  if (!isHeic) return file;
+  try {
+    const heic2any = (await import('heic2any')).default;
+    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+    return new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+};
 
 export const Vault: React.FC = () => {
   const { 
@@ -90,6 +96,7 @@ export const Vault: React.FC = () => {
   const [uploadCategory, setUploadCategory] = useState<CategoryType>('Personal IDs');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
 
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
   const [sharePassword, setSharePassword] = useState('');
@@ -114,10 +121,15 @@ export const Vault: React.FC = () => {
   const FOLDER_COLORS = ['#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#ec4899'];
 
   useEffect(() => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
     if (!previewFile) { setResolvedPreviewUrl(null); return; }
     setZoomLevel(1);
     if (isLocalFileUrl(previewFile.url)) {
-      getFileContent(getFileIdFromUrl(previewFile.url)).then(url => {
+      getFileContentUrl(getFileIdFromUrl(previewFile.url)).then(url => {
+        if (url && url.startsWith('blob:')) previewObjectUrlRef.current = url;
         setResolvedPreviewUrl(url || null);
       }).catch(() => setResolvedPreviewUrl(null));
     } else if (previewFile.url) {
@@ -125,6 +137,12 @@ export const Vault: React.FC = () => {
     } else {
       setResolvedPreviewUrl(null);
     }
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
+    };
   }, [previewFile]);
 
   const currentFolders = useMemo(() => {
@@ -133,6 +151,7 @@ export const Vault: React.FC = () => {
 
   const filteredFiles = useMemo(() => {
     return files.filter(f => {
+      if (f.tags.includes('HiddenVault')) return false;
       if (searchQuery.trim() !== '') {
         const matchesQuery = f.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                              f.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -191,8 +210,10 @@ export const Vault: React.FC = () => {
 
     try {
       for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
-        const dataUrl = await readFileAsDataUrl(file);
+        let file = fileList[i];
+
+        // Convert HEIC/HEIF images to JPEG before saving
+        file = await convertHeicToJpeg(file);
 
         await addFile({
           name: file.name,
@@ -204,17 +225,21 @@ export const Vault: React.FC = () => {
           tags: [],
           isStarred: false,
           isArchived: false,
-        }, dataUrl);
+        }, file);
       }
 
       toast({ 
         title: fileList.length > 1 ? `${fileList.length} Files Saved` : 'File Saved',
-        description: 'Stored permanently on your device.',
+        description: 'Stored securely on your device.',
         type: 'success' 
       });
       setShowUploadModal(false);
-    } catch {
-      toast({ title: 'Upload Failed', description: 'Could not read the file.', type: 'error' });
+    } catch (err: any) {
+      if (err?.message === 'STORAGE_LIMIT_EXCEEDED') {
+        toast({ title: 'Storage Full', description: 'You have reached the 5 GB free limit. Upgrade to Premium for unlimited storage.', type: 'error' });
+      } else {
+        toast({ title: 'Upload Failed', description: 'Could not save the file. Try a smaller file.', type: 'error' });
+      }
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -222,22 +247,26 @@ export const Vault: React.FC = () => {
   };
 
   const handleDownload = async (file: FileItem) => {
-    let dataUrl = resolvedPreviewUrl;
-    if (!dataUrl && isLocalFileUrl(file.url)) {
-      dataUrl = (await getFileContent(getFileIdFromUrl(file.url))) || null;
-    } else if (!dataUrl && file.url && !isLocalFileUrl(file.url)) {
-      dataUrl = file.url;
+    let url: string | null = resolvedPreviewUrl;
+    let tempObjectUrl: string | null = null;
+
+    if (!url && isLocalFileUrl(file.url)) {
+      url = (await getFileContentUrl(getFileIdFromUrl(file.url))) || null;
+      if (url && url.startsWith('blob:')) tempObjectUrl = url;
+    } else if (!url && file.url && !isLocalFileUrl(file.url)) {
+      url = file.url;
     }
 
-    if (!dataUrl) {
+    if (!url) {
       toast({ title: 'No file content available', type: 'error' });
       return;
     }
 
     const a = document.createElement('a');
-    a.href = dataUrl;
+    a.href = url;
     a.download = file.name;
     a.click();
+    if (tempObjectUrl) setTimeout(() => URL.revokeObjectURL(tempObjectUrl!), 10000);
     toast({ title: 'Download Started', description: file.name, type: 'success' });
   };
 
@@ -360,7 +389,9 @@ export const Vault: React.FC = () => {
         tabs={CATEGORIES.map(c => ({
           id: c.id,
           label: c.label,
-          count: c.id === 'All' ? files.length : files.filter(f => f.category === c.id).length
+          count: c.id === 'All' 
+        ? files.filter(f => !f.tags.includes('HiddenVault')).length 
+        : files.filter(f => f.category === c.id && !f.tags.includes('HiddenVault')).length
         }))}
         activeTab={activeCategory}
         onChange={setActiveCategory}

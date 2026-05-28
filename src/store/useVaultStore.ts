@@ -52,7 +52,7 @@ interface VaultStore {
   createFolder: (name: string, parentId?: string | null, color?: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
 
-  addFile: (file: Omit<FileItem, 'id' | 'createdAt' | 'updatedAt'>, fileContent?: string) => Promise<void>;
+  addFile: (file: Omit<FileItem, 'id' | 'createdAt' | 'updatedAt'>, fileContent?: File | Blob | string) => Promise<void>;
   updateFile: (id: string, updates: Partial<FileItem>) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
 
@@ -136,6 +136,15 @@ export const useVaultStore = create<VaultStore>()(
 
       login: (user) => {
         const currentOwnerId = get().dataOwnerId;
+        const sessionEntry = {
+          id: 'sess-' + Date.now(),
+          device: 'Web Browser',
+          browser: 'Vaultify Secure Web',
+          ip: '127.0.0.1',
+          lastActive: 'Just now',
+          isCurrent: true,
+          location: 'Local Access'
+        };
         
         if (currentOwnerId && currentOwnerId !== user.id) {
           // Different user — clear previous user's vault data for privacy
@@ -156,17 +165,7 @@ export const useVaultStore = create<VaultStore>()(
             isPremium: false,
             paymentStatus: 'none',
             premiumTransactionId: '',
-            sessions: [
-              {
-                id: 'sess-' + Date.now(),
-                device: 'Web Browser',
-                browser: 'Vaultify Secure Web',
-                ip: '127.0.0.1',
-                lastActive: 'Just now',
-                isCurrent: true,
-                location: 'Local Access'
-              }
-            ]
+            sessions: [sessionEntry]
           });
         } else {
           // Same user or first login — preserve existing vault data
@@ -174,19 +173,20 @@ export const useVaultStore = create<VaultStore>()(
             isAuthenticated: true,
             user,
             dataOwnerId: user.id,
-            sessions: [
-              {
-                id: 'sess-' + Date.now(),
-                device: 'Web Browser',
-                browser: 'Vaultify Secure Web',
-                ip: '127.0.0.1',
-                lastActive: 'Just now',
-                isCurrent: true,
-                location: 'Local Access'
-              }
-            ]
+            sessions: [sessionEntry]
           });
         }
+
+        // Restore PIN from localStorage if not already set (covers fresh device)
+        setTimeout(() => {
+          const state = get();
+          if (!state.hiddenVaultPin) {
+            try {
+              const savedPin = localStorage.getItem(`vaultify_hvpin_${user.id}`);
+              if (savedPin) set({ hiddenVaultPin: savedPin });
+            } catch { /* ignore */ }
+          }
+        }, 0);
       },
 
       logout: async () => {
@@ -258,7 +258,7 @@ export const useVaultStore = create<VaultStore>()(
         get().logActivity('delete', 'Deleted folder');
       },
 
-      addFile: async (fileData, fileContent?: string) => {
+      addFile: async (fileData, fileContent?: File | Blob | string) => {
         const { isPremium, files } = get();
         if (!isPremium) {
           const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
@@ -268,6 +268,7 @@ export const useVaultStore = create<VaultStore>()(
         }
         const localId = genId();
         const now = new Date().toISOString();
+        const isBlob = fileContent instanceof Blob;
 
         const fileUrl = fileContent ? `${LOCAL_FILE_PREFIX}${localId}` : (fileData.url || '');
 
@@ -287,14 +288,16 @@ export const useVaultStore = create<VaultStore>()(
           expiryDate: fileData.expiryDate
         };
 
-        if (fileContent) {
-          await storeFileContent(localId, fileContent).catch(() => {});
-        }
-
+        // Store metadata immediately so UI updates right away
         set((state) => ({
           files: [newFile, ...state.files],
           user: state.user ? { ...state.user, usedStorage: state.user.usedStorage + newFile.size } : null
         }));
+
+        // Store file content async — Blobs store natively (fast), strings store as-is
+        if (fileContent) {
+          storeFileContent(localId, fileContent).catch(() => {});
+        }
 
         const userId = get().user?.id;
         if (userId && supabase) {
@@ -302,17 +305,16 @@ export const useVaultStore = create<VaultStore>()(
             const { data, error } = await supabase.from('files').insert([{
               name: fileData.name, size: fileData.size, type: fileData.type,
               url: fileUrl,
-              content: fileContent || null,
+              content: isBlob ? null : (typeof fileContent === 'string' ? fileContent : null),
               folder_id: fileData.folderId, category: fileData.category,
               tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
               expiry_date: fileData.expiryDate || null, user_id: userId,
             }]).select().single();
             if (!error && data) {
               const newUrl = fileContent ? `${LOCAL_FILE_PREFIX}${data.id}` : fileUrl;
-              // Migrate IndexedDB content from localId to Supabase ID
               if (fileContent) {
-                await storeFileContent(data.id, fileContent).catch(() => {});
-                await deleteFileContent(localId).catch(() => {});
+                storeFileContent(data.id, fileContent).catch(() => {});
+                deleteFileContent(localId).catch(() => {});
               }
               set((state) => ({
                 files: state.files.map(f => f.id === localId ? { ...f, id: data.id, url: newUrl } : f)
@@ -579,6 +581,15 @@ export const useVaultStore = create<VaultStore>()(
 
       setHiddenVaultPin: (pin) => {
         set({ hiddenVaultPin: pin });
+        // Persist PIN to Supabase user metadata for cross-device sync
+        if (supabase) {
+          supabase.auth.updateUser({ data: { vault_pin: pin } }).catch(() => {});
+        }
+        // Also save in localStorage keyed by userId
+        const userId = get().user?.id;
+        if (userId) {
+          try { localStorage.setItem(`vaultify_hvpin_${userId}`, pin); } catch { /* ignore */ }
+        }
         get().logActivity('edit', 'Updated Secret Vault PIN');
       },
 

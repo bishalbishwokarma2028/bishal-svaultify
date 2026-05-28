@@ -28,11 +28,18 @@ export const idbStorage = {
   },
 };
 
-export const storeFileContent = (id: string, dataUrl: string): Promise<void> =>
-  set(id, dataUrl, fileStore);
+export const storeFileContent = (id: string, data: Blob | string): Promise<void> =>
+  set(id, data, fileStore);
 
-export const getFileContent = (id: string): Promise<string | undefined> =>
-  get<string>(id, fileStore);
+export const getFileContent = (id: string): Promise<Blob | string | undefined> =>
+  get<Blob | string>(id, fileStore);
+
+export const getFileContentUrl = async (id: string): Promise<string | undefined> => {
+  const content = await get<Blob | string>(id, fileStore);
+  if (!content) return undefined;
+  if (content instanceof Blob) return URL.createObjectURL(content);
+  return content as string;
+};
 
 export const deleteFileContent = (id: string): Promise<void> =>
   del(id, fileStore);

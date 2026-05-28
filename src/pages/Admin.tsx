@@ -62,7 +62,7 @@ const ADMIN_PASSWORD = 'bishal@ado@9746294386';
 const APP_VERSION = '2.1.0';
 const FREE_LIMIT_GB = 5;
 
-type AdminTab = 'requests' | 'users' | 'stats' | 'settings' | 'announce' | 'messages';
+type AdminTab = 'requests' | 'users' | 'stats' | 'settings' | 'announce' | 'messages' | 'access';
 
 export const Admin: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => getAdminSession());
@@ -101,6 +101,28 @@ export const Admin: React.FC = () => {
   // Subscription price state
   const [priceInput, setPriceInput] = useState(() => String(getSubscriptionPrice()));
   const [priceSaved, setPriceSaved] = useState(false);
+
+  // Plan access control state
+  const PLAN_SECTIONS = [
+    { id: 'vault', label: 'Digital Vault', desc: 'File storage and management', icon: '🗄️' },
+    { id: 'passwords', label: 'Password Vault', desc: 'Password manager', icon: '🔑' },
+    { id: 'notes', label: 'Secure Notes', desc: 'Encrypted note-taking', icon: '📝' },
+    { id: 'reminders', label: 'Expiry Reminders', desc: 'Document expiry alerts', icon: '⏰' },
+    { id: 'hidden-vault', label: 'Hidden Vault', desc: 'Calculator-disguised vault', icon: '👁️' },
+    { id: 'scanner', label: 'Document Scanner', desc: 'Scan and save documents', icon: '📷' },
+    { id: 'search', label: 'Smart Search', desc: 'Global search across vault', icon: '🔍' },
+  ];
+  const [planAccess, setPlanAccess] = useState<Record<string, 'free' | 'premium'>>(() => {
+    try { return JSON.parse(localStorage.getItem('vaultify-plan-access') || '{}'); } catch { return {}; }
+  });
+  const handleToggleAccess = (sectionId: string) => {
+    const current = planAccess[sectionId] || 'free';
+    const next = current === 'free' ? 'premium' : 'free';
+    const updated = { ...planAccess, [sectionId]: next };
+    setPlanAccess(updated);
+    try { localStorage.setItem('vaultify-plan-access', JSON.stringify(updated)); } catch { /* ignore */ }
+    flash(`${sectionId} is now ${next === 'premium' ? 'Premium Only' : 'Free for All'}`);
+  };
 
   const loadData = () => {
     setRequests(getAllRequests());
@@ -260,6 +282,7 @@ export const Admin: React.FC = () => {
     { id: 'messages', label: 'Messages', icon: MessageSquare, badge: messagesUnread },
     { id: 'stats', label: 'Statistics', icon: BarChart3 },
     { id: 'announce', label: 'Announce', icon: Bell },
+    { id: 'access', label: 'Plan Access', icon: ToggleLeft },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -958,6 +981,69 @@ export const Admin: React.FC = () => {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── PLAN ACCESS TAB ── */}
+        {activeTab === 'access' && (
+          <div className="space-y-4">
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-4">
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ToggleLeft className="w-4 h-4 text-blue-400" />
+                  Section Access Control
+                </h2>
+                <p className="text-xs text-gray-400 mt-1">
+                  Toggle which app sections require a Premium plan. Free sections are accessible to all users.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {PLAN_SECTIONS.map(section => {
+                  const isPremiumOnly = (planAccess[section.id] || 'free') === 'premium';
+                  return (
+                    <div
+                      key={section.id}
+                      className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
+                        isPremiumOnly
+                          ? 'bg-amber-500/5 border-amber-500/20'
+                          : 'bg-white/[0.03] border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{section.icon}</span>
+                        <div>
+                          <p className="text-sm font-semibold text-white">{section.label}</p>
+                          <p className="text-[11px] text-gray-500">{section.desc}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          isPremiumOnly
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        }`}>
+                          {isPremiumOnly ? '👑 PREMIUM ONLY' : '✓ FREE'}
+                        </span>
+                        <button
+                          onClick={() => handleToggleAccess(section.id)}
+                          className={`relative w-11 h-6 rounded-full transition-all flex-shrink-0 ${
+                            isPremiumOnly ? 'bg-amber-500' : 'bg-gray-700'
+                          }`}
+                          title={isPremiumOnly ? 'Switch to Free' : 'Switch to Premium Only'}
+                        >
+                          <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${
+                            isPremiumOnly ? 'left-6' : 'left-1'
+                          }`} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20 text-xs text-blue-300">
+                💡 Changes take effect immediately for all users. Free users will see a lock icon on premium-only sections.
+              </div>
             </div>
           </div>
         )}

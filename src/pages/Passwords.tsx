@@ -549,14 +549,22 @@ export const Passwords: React.FC = () => {
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-4">
                     <button
                       onClick={() => triggerBiometricUnlock(selectedPwd.id)}
+                      disabled={biometricUnlocking === selectedPwd.id}
                       className={`p-2 rounded-lg transition-colors ${
                         unlockedIds.includes(selectedPwd.id) 
                           ? 'bg-blue-600/20 text-blue-400' 
+                          : biometricUnlocking === selectedPwd.id
+                          ? 'bg-white/5 text-amber-400'
                           : 'bg-white/5 text-gray-400 hover:text-white'
                       }`}
                       title={unlockedIds.includes(selectedPwd.id) ? 'Hide password' : 'Show password'}
                     >
-                      {unlockedIds.includes(selectedPwd.id) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {biometricUnlocking === selectedPwd.id
+                        ? <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                        : unlockedIds.includes(selectedPwd.id) 
+                        ? <EyeOff className="w-3.5 h-3.5" /> 
+                        : <Eye className="w-3.5 h-3.5" />
+                      }
                     </button>
 
                     <button

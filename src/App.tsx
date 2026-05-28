@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useVaultStore } from './store/useVaultStore';
@@ -67,8 +67,58 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+const useReminderNotifications = (isAuthenticated: boolean) => {
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const requestPerm = async () => {
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+    };
+    requestPerm();
+
+    const check = () => {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      const { reminders } = useVaultStore.getState();
+      const now = new Date();
+      let shown: string[] = [];
+      try { shown = JSON.parse(localStorage.getItem('vaultify-notif-shown') || '[]'); } catch { shown = []; }
+
+      const newlyShown: string[] = [];
+      reminders.forEach(reminder => {
+        if (reminder.isResolved) return;
+        const expiry = new Date(reminder.expiryDate);
+        const daysUntil = Math.floor((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const notifId = `${reminder.id}-d${daysUntil}`;
+        if (!shown.includes(notifId) && daysUntil >= 0 && daysUntil <= reminder.notifyBeforeDays) {
+          try {
+            new Notification('Vaultify — Expiry Alert 🔔', {
+              body: `"${reminder.title}" expires ${daysUntil === 0 ? 'today!' : `in ${daysUntil} day(s)`}`,
+              icon: '/favicon.ico',
+              tag: notifId,
+            });
+            newlyShown.push(notifId);
+          } catch { /* ignore */ }
+        }
+      });
+
+      if (newlyShown.length > 0) {
+        try { localStorage.setItem('vaultify-notif-shown', JSON.stringify([...shown.slice(-100), ...newlyShown])); } catch { /* ignore */ }
+      }
+    };
+
+    check();
+    intervalRef.current = setInterval(check, 30 * 60 * 1000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [isAuthenticated]);
+};
+
 export const App: React.FC = () => {
   const { isAuthenticated, login, clearAuth, theme, syncPremiumFromGlobal, syncFromSupabase } = useVaultStore();
+  useReminderNotifications(isAuthenticated);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme ?? 'dark');

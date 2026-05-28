@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   EyeOff, 
@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
-import { getFileContent, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
+import { getFileContentUrl, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
 import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
 
 export const HiddenVault: React.FC = () => {
@@ -39,6 +39,7 @@ export const HiddenVault: React.FC = () => {
 
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
 
   /* ── Calculator state ── */
   const [calcDisplay, setCalcDisplay] = useState('0');
@@ -71,12 +72,17 @@ export const HiddenVault: React.FC = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
 
   const openPreview = (file: import('../types').FileItem) => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
     setPreviewingFile(file);
     setPreviewUrl(null);
     setZoomLevel(1);
     setPreviewLoading(true);
     if (isLocalFileUrl(file.url)) {
-      getFileContent(getFileIdFromUrl(file.url)).then(url => {
+      getFileContentUrl(getFileIdFromUrl(file.url)).then(url => {
+        if (url && url.startsWith('blob:')) previewObjectUrlRef.current = url;
         setPreviewUrl(url || null);
         setPreviewLoading(false);
       }).catch(() => setPreviewLoading(false));
@@ -87,6 +93,14 @@ export const HiddenVault: React.FC = () => {
       setPreviewLoading(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    };
+  }, []);
 
   const noPinSet = hiddenVaultPin === '';
 
@@ -143,42 +157,51 @@ export const HiddenVault: React.FC = () => {
     return 'text-purple-400 bg-purple-500/10';
   };
 
+  const convertHeicToJpeg = async (file: File): Promise<File> => {
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif' ||
+      file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+    if (!isHeic) return file;
+    try {
+      const heic2any = (await import('heic2any')).default;
+      const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      const blob = Array.isArray(converted) ? converted[0] : converted;
+      return new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    } catch { return file; }
+  };
+
   const handleAddFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
     setIsAdding(true);
 
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
-      let dataUrl = '';
-      try {
-        dataUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (ev) => resolve(ev.target?.result as string || '');
-          reader.onerror = () => resolve('');
-          reader.readAsDataURL(file);
-        });
-      } catch { dataUrl = ''; }
+    try {
+      for (let i = 0; i < fileList.length; i++) {
+        let file = fileList[i];
+        file = await convertHeicToJpeg(file);
 
-      await addFile({
-        name: file.name,
-        size: file.size,
-        type: file.type || 'application/octet-stream',
-        url: '',
-        folderId: null,
-        category: 'Personal IDs',
-        tags: ['HiddenVault'],
-        isStarred: false,
-        isArchived: false
-      }, dataUrl);
+        await addFile({
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          url: '',
+          folderId: null,
+          category: 'Personal IDs',
+          tags: ['HiddenVault'],
+          isStarred: false,
+          isArchived: false
+        }, file);
+      }
+
+      toast({
+        title: `${fileList.length === 1 ? '1 file' : `${fileList.length} files`} added to Secret Vault`,
+        type: 'success'
+      });
+    } catch {
+      toast({ title: 'Could not add file', description: 'Try a smaller file or different format.', type: 'error' });
+    } finally {
+      setIsAdding(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-
-    toast({
-      title: `${fileList.length === 1 ? '1 file' : `${fileList.length} files`} added to Secret Vault`,
-      type: 'success'
-    });
-    setIsAdding(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   /* ── First-time PIN setup submit ── */
