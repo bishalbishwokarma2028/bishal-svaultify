@@ -258,35 +258,77 @@ export const Settings: React.FC = () => {
   };
 
   const handleEnableBiometric = async () => {
+    if (!window.PublicKeyCredential) {
+      toast({ title: 'Not Supported', description: 'Your browser does not support biometric login. Try Chrome on Android or Safari on iPhone.', type: 'error' });
+      return;
+    }
+
     setBiometricEnrolling(true);
     try {
-      if (window.PublicKeyCredential) {
-        const challenge = new Uint8Array(32);
-        crypto.getRandomValues(challenge);
-        await navigator.credentials.create({
-          publicKey: {
-            challenge,
-            rp: { name: 'Vaultify', id: window.location.hostname },
-            user: {
-              id: new TextEncoder().encode(user?.id || 'vaultify-user'),
-              name: user?.email || 'user@vaultify.app',
-              displayName: user?.fullName || 'Vaultify User',
-            },
-            pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
-            authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
-            timeout: 60000,
+      const isPlatformAvailable = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+      if (!isPlatformAvailable) {
+        toast({
+          title: 'No Biometric Found',
+          description: 'No fingerprint or face lock is set up on this device. Please set one up in your device settings first.',
+          type: 'error',
+        });
+        setBiometricEnrolling(false);
+        return;
+      }
+
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: 'Vaultify', id: window.location.hostname },
+          user: {
+            id: new TextEncoder().encode(user?.id || 'vaultify-user'),
+            name: user?.email || 'user@vaultify.app',
+            displayName: user?.fullName || 'Vaultify User',
           },
+          pubKeyCredParams: [
+            { alg: -7, type: 'public-key' },
+            { alg: -257, type: 'public-key' },
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+            residentKey: 'preferred',
+          },
+          timeout: 60000,
+        },
+      }) as PublicKeyCredential | null;
+
+      if (!credential) throw new Error('No credential returned');
+
+      const rawId = credential.rawId;
+      const bytes = new Uint8Array(rawId);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const credId = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+
+      localStorage.setItem('vaultify-biometric-enabled', 'true');
+      localStorage.setItem('vaultify-biometric-email', user?.email || '');
+      localStorage.setItem('vaultify-biometric-credential-id', credId);
+      setBiometricEnabled(true);
+      toast({
+        title: 'Biometric Enabled!',
+        description: 'You can now sign in with your fingerprint or face.',
+        type: 'success',
+      });
+    } catch (err: any) {
+      const msg = (err?.message || err?.name || '').toLowerCase();
+      if (msg.includes('cancel') || msg.includes('notallowed') || msg.includes('abort')) {
+        toast({ title: 'Setup Cancelled', description: 'Biometric setup was cancelled. Try again when ready.', type: 'info' });
+      } else {
+        toast({
+          title: 'Setup Failed',
+          description: 'Could not set up biometric. Make sure your device has fingerprint or face lock configured.',
+          type: 'error',
         });
       }
-      localStorage.setItem('vaultify-biometric-enabled', 'true');
-      localStorage.setItem('vaultify-biometric-email', user?.email || '');
-      setBiometricEnabled(true);
-      toast({ title: 'Biometric Enabled', description: 'You can now sign in with fingerprint or face lock.', type: 'success' });
-    } catch {
-      localStorage.setItem('vaultify-biometric-enabled', 'true');
-      localStorage.setItem('vaultify-biometric-email', user?.email || '');
-      setBiometricEnabled(true);
-      toast({ title: 'Biometric Enabled', description: 'Biometric sign-in is now active for this device.', type: 'success' });
     } finally {
       setBiometricEnrolling(false);
     }
@@ -295,6 +337,7 @@ export const Settings: React.FC = () => {
   const handleDisableBiometric = () => {
     localStorage.removeItem('vaultify-biometric-enabled');
     localStorage.removeItem('vaultify-biometric-email');
+    localStorage.removeItem('vaultify-biometric-credential-id');
     setBiometricEnabled(false);
     toast({ title: 'Biometric Disabled', type: 'info' });
   };
@@ -558,59 +601,95 @@ export const Settings: React.FC = () => {
           {/* SECURITY */}
           {activeSection === 'security' && (
             <div className="space-y-4">
-              <div className="glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 space-y-6">
+              <div className="glass-panel-premium rounded-3xl p-6 sm:p-8 border border-white/10 space-y-5">
                 <div>
-                  <h3 className="text-base font-bold text-white">Biometric Verification</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">Use your fingerprint or face to unlock your vault instantly.</p>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Fingerprint className="w-5 h-5 text-blue-400" />
+                    Fingerprint & Face Login
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Sign in instantly using your device's fingerprint scanner or face recognition — no password needed.
+                  </p>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
-                  <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-2xl ${biometricEnabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/[0.04] text-gray-400'}`}>
-                      <Fingerprint className="w-8 h-8" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-white">
-                        {biometricEnabled ? 'Biometric Active' : 'Biometric Not Set Up'}
-                      </p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">
-                        {biometricEnabled
-                          ? 'Your fingerprint/face is registered on this device.'
-                          : biometricSupported
-                          ? 'Add your fingerprint or face ID to secure your vault.'
-                          : 'Biometric authentication is not available on this device.'}
-                      </p>
-                    </div>
-                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${biometricEnabled ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+                {/* Status card */}
+                <div className={`p-4 rounded-2xl border flex items-center gap-4 ${biometricEnabled ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-white/[0.02] border-white/5'}`}>
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${biometricEnabled ? 'bg-emerald-500/20' : 'bg-white/5'}`}>
+                    <Fingerprint className={`w-7 h-7 ${biometricEnabled ? 'text-emerald-400' : 'text-gray-500'}`} />
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-bold ${biometricEnabled ? 'text-emerald-300' : 'text-white'}`}>
+                      {biometricEnabled ? 'Biometric Sign-In Active' : 'Not Set Up Yet'}
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
+                      {biometricEnabled
+                        ? `Linked to ${user?.email}. You can sign in from the login screen using your fingerprint or face.`
+                        : 'Follow the steps below to enable quick sign-in with your fingerprint or face.'}
+                    </p>
+                  </div>
+                  <div className={`w-3 h-3 rounded-full flex-shrink-0 ${biometricEnabled ? 'bg-emerald-400 shadow-lg shadow-emerald-500/40' : 'bg-gray-600'}`} />
+                </div>
 
-                  {biometricEnabled ? (
+                {/* Steps guide — only shown when not yet enabled */}
+                {!biometricEnabled && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">How it works</p>
+                    {[
+                      { step: '1', text: 'Tap the button below — your device will ask you to scan your finger or face.' },
+                      { step: '2', text: 'When the system prompt appears, place your finger on the sensor or look at the camera.' },
+                      { step: '3', text: 'Once registered, the Login screen will show a "Sign in with Fingerprint / Face" button.' },
+                    ].map(({ step, text }) => (
+                      <div key={step} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                        <div className="w-5 h-5 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">
+                          {step}
+                        </div>
+                        <p className="text-[11px] text-gray-300 leading-relaxed">{text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Action button */}
+                {biometricEnabled ? (
+                  <div className="space-y-2">
+                    <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <p className="text-[11px] text-emerald-300">
+                        Biometric sign-in is active. Go to the login screen to use it.
+                      </p>
+                    </div>
                     <button
                       onClick={handleDisableBiometric}
                       className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold transition-all flex items-center justify-center gap-2"
                     >
                       <X className="w-3.5 h-3.5" />
-                      Remove Biometric
+                      Remove Biometric Sign-In
                     </button>
-                  ) : (
-                    <button
-                      onClick={handleEnableBiometric}
-                      disabled={biometricEnrolling || !biometricSupported}
-                      className="w-full py-2.5 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 border border-blue-500/20 text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {biometricEnrolling ? (
-                        <><div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /><span>Setting up...</span></>
-                      ) : (
-                        <><Fingerprint className="w-3.5 h-3.5" /><span>{biometricSupported ? 'Enable Biometric Verification' : 'Not Supported on This Device'}</span></>
-                      )}
-                    </button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleEnableBiometric}
+                    disabled={biometricEnrolling}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98]"
+                  >
+                    {biometricEnrolling ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Waiting for your fingerprint / face...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Fingerprint className="w-4 h-4" />
+                        <span>Set Up Fingerprint / Face Login</span>
+                      </>
+                    )}
+                  </button>
+                )}
 
-                <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/15 flex items-start gap-3">
+                <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-3">
                   <ShieldCheck className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
                   <p className="text-[11px] text-gray-400 leading-relaxed">
-                    Biometric data is stored securely on your device and never shared. You can always sign in with your email and password if biometric fails.
+                    Your biometric data stays on your device and is never uploaded or shared. You can always use your email and password as a backup.
                   </p>
                 </div>
               </div>
@@ -630,7 +709,6 @@ export const Settings: React.FC = () => {
                   ))}
                 </div>
               </div>
-
             </div>
           )}
 

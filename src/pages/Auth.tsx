@@ -7,6 +7,17 @@ import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
 import { registerUser, setAdminSession } from '../lib/premiumRequests';
 
+function base64urlToUint8Array(base64url: string): Uint8Array {
+  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 export const Auth: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [email, setEmail] = useState('');
@@ -28,93 +39,108 @@ export const Auth: React.FC = () => {
   useEffect(() => {
     const enabled = localStorage.getItem('vaultify-biometric-enabled') === 'true';
     const storedEmail = localStorage.getItem('vaultify-biometric-email') || '';
-    if (enabled && storedEmail) {
+    const credId = localStorage.getItem('vaultify-biometric-credential-id') || '';
+    if (enabled && storedEmail && credId) {
       setBiometricAvailable(true);
       setBiometricEmail(storedEmail);
     }
   }, []);
 
+  const doLoginFromSession = async (session: { user: any }) => {
+    const u = session.user;
+    const profile = {
+      id: u.id,
+      email: u.email!,
+      fullName: u.user_metadata?.full_name || (u.email as string).split('@')[0],
+      avatarUrl: u.user_metadata?.avatar_url || undefined,
+      securityScore: 100,
+      totalStorageLimit: 15 * 1024 * 1024 * 1024,
+      usedStorage: 0,
+      createdAt: u.created_at,
+      isPremium: true,
+    };
+    login(profile);
+    toast({
+      title: 'Biometric Sign In Successful',
+      description: `Welcome back, ${profile.fullName}!`,
+      type: 'success',
+    });
+    navigate('/dashboard');
+  };
+
   const handleBiometricLogin = async () => {
-    if (!biometricEmail) {
-      toast({ title: 'Biometric Not Set Up', description: 'Please sign in with email first, then enable biometric in Settings.', type: 'error' });
+    if (!supabase) {
+      toast({ title: 'Service Unavailable', description: 'Authentication service not configured.', type: 'error' });
+      return;
+    }
+
+    const credentialIdB64 = localStorage.getItem('vaultify-biometric-credential-id');
+    if (!credentialIdB64) {
+      toast({
+        title: 'Biometric Not Set Up',
+        description: 'Please sign in with email first, then enable biometric in Settings.',
+        type: 'error',
+      });
       return;
     }
 
     setIsBiometricLoading(true);
     try {
-      if (window.PublicKeyCredential) {
-        const challenge = new Uint8Array(32);
-        crypto.getRandomValues(challenge);
-        await navigator.credentials.get({
-          publicKey: {
-            challenge,
-            timeout: 60000,
-            userVerification: 'required',
-            rpId: window.location.hostname,
-          },
-        });
-      }
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
 
-      if (!supabase) {
-        toast({ title: 'Service Unavailable', description: 'Authentication service not configured.', type: 'error' });
-        setIsBiometricLoading(false);
-        return;
-      }
+      const credentialId = base64urlToUint8Array(credentialIdB64).buffer;
+
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [
+            {
+              type: 'public-key',
+              id: credentialId,
+              transports: ['internal'] as AuthenticatorTransport[],
+            },
+          ],
+          userVerification: 'required',
+          rpId: window.location.hostname,
+          timeout: 60000,
+        },
+      });
 
       const { data: { session } } = await supabase.auth.getSession();
-
       if (session?.user) {
-        const u = session.user;
-        const profile = {
-          id: u.id,
-          email: u.email!,
-          fullName: u.user_metadata?.full_name || u.email!.split('@')[0],
-          avatarUrl: u.user_metadata?.avatar_url || undefined,
-          securityScore: 100,
-          totalStorageLimit: 15 * 1024 * 1024 * 1024,
-          usedStorage: 0,
-          createdAt: u.created_at,
-          isPremium: true,
-        };
-        login(profile);
-        toast({ title: 'Biometric Sign In Successful', description: `Welcome back, ${profile.fullName}!`, type: 'success' });
-        navigate('/dashboard');
+        await doLoginFromSession(session);
         return;
       }
 
       const { data: { session: refreshed } } = await supabase.auth.refreshSession();
       if (refreshed?.user) {
-        const u = refreshed.user;
-        const profile = {
-          id: u.id,
-          email: u.email!,
-          fullName: u.user_metadata?.full_name || u.email!.split('@')[0],
-          avatarUrl: u.user_metadata?.avatar_url || undefined,
-          securityScore: 100,
-          totalStorageLimit: 15 * 1024 * 1024 * 1024,
-          usedStorage: 0,
-          createdAt: u.created_at,
-          isPremium: true,
-        };
-        login(profile);
-        toast({ title: 'Biometric Sign In Successful', description: `Welcome back, ${profile.fullName}!`, type: 'success' });
-        navigate('/dashboard');
+        await doLoginFromSession(refreshed);
         return;
       }
 
       toast({
         title: 'Session Expired',
-        description: `Your session for ${biometricEmail} has expired. Please sign in with your password once to restore biometric access.`,
+        description: `Your session has expired. Please sign in with your password once to restore biometric access.`,
         type: 'error',
       });
       setEmail(biometricEmail);
-      setMode('login');
     } catch (err: any) {
-      const msg = err?.message || '';
-      if (msg.includes('cancel') || msg.includes('NotAllowed') || msg.includes('abort')) {
-        toast({ title: 'Biometric Cancelled', description: 'Verification was cancelled.', type: 'info' });
+      const msg = (err?.message || err?.name || '').toLowerCase();
+      if (msg.includes('cancel') || msg.includes('notallowed') || msg.includes('abort')) {
+        toast({ title: 'Cancelled', description: 'Biometric verification was cancelled.', type: 'info' });
+      } else if (msg.includes('security') || msg.includes('invalid') || msg.includes('not-allowed')) {
+        toast({
+          title: 'Biometric Failed',
+          description: 'Verification failed. You may need to re-set up biometric in Settings.',
+          type: 'error',
+        });
       } else {
-        toast({ title: 'Biometric Failed', description: 'Could not verify biometric. Please use email and password.', type: 'error' });
+        toast({
+          title: 'Biometric Failed',
+          description: 'Could not verify. Please use email and password.',
+          type: 'error',
+        });
       }
     } finally {
       setIsBiometricLoading(false);
@@ -162,9 +188,7 @@ export const Auth: React.FC = () => {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: { full_name: fullName || email.split('@')[0] },
-          },
+          options: { data: { full_name: fullName || email.split('@')[0] } },
         });
 
         if (error) throw error;
@@ -226,12 +250,12 @@ export const Auth: React.FC = () => {
     <div className="min-h-screen bg-[#030712] flex items-center justify-center px-4 py-12 relative overflow-hidden selection:bg-blue-600 selection:text-white">
       <motion.div
         animate={{ scale: [1, 1.2, 1], x: [0, 50, 0], y: [0, -30, 0] }}
-        transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+        transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut' }}
         className="absolute top-10 left-10 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none"
       />
       <motion.div
         animate={{ scale: [1, 1.1, 1], x: [0, -40, 0], y: [0, 40, 0] }}
-        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
         className="absolute bottom-10 right-10 w-96 h-96 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none"
       />
 
@@ -261,7 +285,40 @@ export const Auth: React.FC = () => {
             <span>Secured by Supabase</span>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          {/* Biometric sign-in — shown at top on login mode when enrolled */}
+          {mode === 'login' && biometricAvailable && (
+            <div className="mb-5">
+              <button
+                type="button"
+                onClick={handleBiometricLogin}
+                disabled={isBiometricLoading}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 border border-emerald-500/30 hover:border-emerald-500/60 text-emerald-300 font-bold text-sm transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98]"
+              >
+                {isBiometricLoading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Verifying with biometric...</span>
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint className="w-5 h-5" />
+                    <span>Sign in with Fingerprint / Face</span>
+                  </>
+                )}
+              </button>
+              <p className="text-center text-[10px] text-gray-600 mt-1.5">
+                Account: <span className="text-gray-400">{biometricEmail}</span>
+              </p>
+
+              <div className="flex items-center gap-3 mt-4">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-[10px] text-gray-500 font-medium">or sign in with password</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'signup' && (
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-300">Full Name</label>
@@ -309,7 +366,7 @@ export const Auth: React.FC = () => {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -317,16 +374,14 @@ export const Auth: React.FC = () => {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword(v => !v)}
+                    onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {mode === 'signup' && (
-                  <p className="text-[10px] text-gray-500 mt-1">
-                    Must be at least 6 characters.
-                  </p>
+                  <p className="text-[10px] text-gray-500 mt-1">Must be at least 6 characters.</p>
                 )}
               </div>
             )}
@@ -350,40 +405,6 @@ export const Auth: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Biometric Sign In — only shown on login mode when biometric is set up */}
-          {mode === 'login' && biometricAvailable && (
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-white/10" />
-                <span className="text-[10px] text-gray-500 font-medium">or</span>
-                <div className="flex-1 h-px bg-white/10" />
-              </div>
-
-              <button
-                type="button"
-                onClick={handleBiometricLogin}
-                disabled={isBiometricLoading}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-300 font-bold text-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isBiometricLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying...</span>
-                  </>
-                ) : (
-                  <>
-                    <Fingerprint className="w-5 h-5" />
-                    <span>Sign in with Biometric</span>
-                  </>
-                )}
-              </button>
-
-              <p className="text-center text-[10px] text-gray-600">
-                Linked to <span className="text-gray-400">{biometricEmail}</span>
-              </p>
-            </div>
-          )}
 
           <div className="mt-6 pt-4 border-t border-white/5 text-center text-xs text-gray-400">
             {mode === 'login' && (
