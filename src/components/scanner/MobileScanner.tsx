@@ -721,7 +721,56 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
                 {cameraActive ? 'Point at document — tap shutter to capture' : 'Camera · Gallery · or drag & drop below'}
               </p>
 
-              <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.rtf,.csv,.zip,.rar,.7z,.mp4,.mov,.avi,.mkv,.mp3,.m4a,.aac,.wav,.ogg,.flac,.webp,.bmp,.tiff,.tif,.svg" className="hidden" onChange={handleUploadPhoto} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={[
+                  // Standard image MIME types
+                  'image/*',
+                  // HEIC / HEIF (Apple formats — need explicit MIME + extension)
+                  'image/heic','image/heif','.heic','.heif',
+                  // AVIF
+                  'image/avif','.avif',
+                  // RAW camera formats
+                  '.raw','.cr2','.nef','.arw','.dng','.orf','.rw2',
+                  'image/x-canon-cr2','image/x-nikon-nef','image/x-sony-arw',
+                  'image/x-adobe-dng','image/x-olympus-orf','image/x-panasonic-rw2',
+                  // Design / professional formats
+                  '.psd','image/vnd.adobe.photoshop',
+                  '.ai','application/postscript',
+                  '.eps','application/eps',
+                  '.indd',
+                  '.xcf','image/x-xcf',
+                  // Other image formats
+                  '.jp2','image/jp2',
+                  '.jxr','image/jxr',
+                  '.apng','image/apng',
+                  '.exr','image/x-exr',
+                  '.hdr','image/vnd.radiance',
+                  '.dds','image/vnd-ms.dds',
+                  '.pcx','image/vnd.zbrush.pcx',
+                  '.tga','image/x-tga',
+                  '.ico','image/x-icon',
+                  '.bmp','image/bmp',
+                  '.tiff','.tif','image/tiff',
+                  '.svg','image/svg+xml',
+                  '.webp','image/webp',
+                  '.gif','image/gif',
+                  // PDF
+                  '.pdf','application/pdf',
+                  // Office docs
+                  '.doc','.docx','.xls','.xlsx','.ppt','.pptx',
+                  '.txt','.rtf','.csv',
+                  // Archives
+                  '.zip','.rar','.7z',
+                  // Video
+                  'video/*','.mp4','.mov','.avi','.mkv','.webm',
+                  // Audio
+                  'audio/*','.mp3','.m4a','.aac','.wav','.ogg','.flac',
+                ].join(',')}
+                className="hidden"
+                onChange={handleUploadPhoto}
+              />
 
               {pages.length > 0 && (
                 <div className="pt-2 border-t border-white/5 space-y-3">
