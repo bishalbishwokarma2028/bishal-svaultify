@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Send,
   DollarSign,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   getAllRequests,
@@ -858,9 +859,9 @@ export const Admin: React.FC = () => {
 
         {/* ── MESSAGES TAB ── */}
         {activeTab === 'messages' && (
-          <div className="flex gap-4 h-[520px]">
-            {/* Conversation list */}
-            <div className="w-64 flex-shrink-0 flex flex-col bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden">
+          <div className="flex flex-col sm:flex-row gap-4 sm:h-[520px]">
+            {/* Conversation list — hidden on mobile when a conversation is selected */}
+            <div className={`sm:w-64 flex-shrink-0 flex flex-col bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden ${selectedConvEmail ? 'hidden sm:flex' : 'flex h-[400px] sm:h-auto'}`}>
               <div className="px-4 py-3 border-b border-white/10 flex-shrink-0">
                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-blue-400" />
@@ -896,8 +897,8 @@ export const Admin: React.FC = () => {
               </div>
             </div>
 
-            {/* Chat window */}
-            <div className="flex-1 flex flex-col bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden">
+            {/* Chat window — hidden on mobile when no conversation is selected */}
+            <div className={`flex-1 flex flex-col bg-slate-900/60 border border-white/10 rounded-2xl overflow-hidden ${!selectedConvEmail ? 'hidden sm:flex' : 'flex h-[520px] sm:h-auto'}`}>
               {!selectedConvEmail ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-6">
                   <MessageSquare className="w-8 h-8 text-gray-600" />
@@ -905,9 +906,18 @@ export const Admin: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <div className="px-4 py-3 border-b border-white/10 flex-shrink-0">
-                    <p className="text-xs font-bold text-white">{selectedConvEmail}</p>
-                    <p className="text-[10px] text-gray-500">{(conversations.find(c => c.email === selectedConvEmail)?.messages.length || 0)} messages</p>
+                  <div className="px-4 py-3 border-b border-white/10 flex-shrink-0 flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedConvEmail(null)}
+                      className="sm:hidden p-1.5 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                      title="Back to conversations"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+                    <div>
+                      <p className="text-xs font-bold text-white">{selectedConvEmail}</p>
+                      <p className="text-[10px] text-gray-500">{(conversations.find(c => c.email === selectedConvEmail)?.messages.length || 0)} messages</p>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
                     {(conversations.find(c => c.email === selectedConvEmail)?.messages || []).map(msg => (

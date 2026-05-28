@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, 
@@ -15,6 +15,7 @@ import {
   Tag,
   Download,
   Palette,
+  ArrowLeft,
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
@@ -28,6 +29,7 @@ export const Notes: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(
     notes.length > 0 ? notes[0].id : null
   );
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('All');
@@ -84,6 +86,18 @@ export const Notes: React.FC = () => {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
   }, [notes, activeCategory, searchQuery]);
+
+  // When category changes, select first matching note and reset to list on mobile
+  useEffect(() => {
+    const filtered = notes.filter(n => activeCategory === 'All' || n.category === activeCategory)
+      .sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+    setSelectedId(filtered.length > 0 ? filtered[0].id : null);
+    setMobileView('list');
+  }, [activeCategory]);
 
   const selectedNote = notes.find(n => n.id === selectedId) || null;
 
@@ -216,8 +230,8 @@ export const Notes: React.FC = () => {
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left Side: Note List */}
-        <div className="glass-panel rounded-2xl border border-white/10 overflow-hidden space-y-1">
+        {/* Left Side: Note List — hidden on mobile when a note is open */}
+        <div className={`glass-panel rounded-2xl border border-white/10 overflow-hidden space-y-1 ${mobileView === 'detail' ? 'hidden lg:block' : ''}`}>
           <div className="p-3 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
               Notes ({filteredNotes.length})
@@ -234,6 +248,7 @@ export const Notes: React.FC = () => {
                   key={note.id}
                   onClick={() => {
                     setSelectedId(note.id);
+                    setMobileView('detail');
                     if (isLockedAndMasked) {
                       setChallengeNoteId(note.id);
                     }
@@ -298,12 +313,19 @@ export const Notes: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Side: Simple Note Editor */}
-        <div className="lg:col-span-2">
+        {/* Right Side: Simple Note Editor — hidden on mobile when list is shown */}
+        <div className={`lg:col-span-2 ${mobileView === 'list' ? 'hidden lg:block' : ''}`}>
           {selectedNote ? (
             <div className="glass-panel-premium rounded-3xl border border-white/10 overflow-hidden flex flex-col h-[640px]">
               <div className="px-6 py-3 border-b border-white/10 bg-black/40 flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setMobileView('list')}
+                    className="lg:hidden p-1.5 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors mr-1"
+                    title="Back to notes list"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
                   <span className="text-[10px] bg-white/5 text-gray-400 px-2 py-0.5 rounded font-mono">
                     {selectedNote.category}
                   </span>

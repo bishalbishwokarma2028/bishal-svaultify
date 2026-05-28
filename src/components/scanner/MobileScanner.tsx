@@ -721,7 +721,7 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
                 {cameraActive ? 'Point at document — tap shutter to capture' : 'Camera · Gallery · or drag & drop below'}
               </p>
 
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadPhoto} />
+              <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.rtf,.csv,.zip,.rar,.7z,.mp4,.mov,.avi,.mkv,.mp3,.m4a,.aac,.wav,.ogg,.flac,.webp,.bmp,.tiff,.tif,.svg" className="hidden" onChange={handleUploadPhoto} />
 
               {pages.length > 0 && (
                 <div className="pt-2 border-t border-white/5 space-y-3">

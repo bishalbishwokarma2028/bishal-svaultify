@@ -13,6 +13,7 @@ import {
   Fingerprint,
   Pencil,
   LayoutGrid,
+  ArrowLeft,
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { PasswordItem } from '../types';
@@ -96,6 +97,7 @@ export const Passwords: React.FC = () => {
     passwords.length > 0 ? passwords[0].id : null
   );
   const [selectedGroup, setSelectedGroup] = useState<string>('All');
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -260,7 +262,7 @@ export const Passwords: React.FC = () => {
     [passwords, selectedGroup]
   );
 
-  // When group changes, auto-select first password in that group
+  // When group changes, auto-select first password and reset to list view
   useEffect(() => {
     const first = groupFilteredPasswords[0];
     if (first) {
@@ -268,6 +270,7 @@ export const Passwords: React.FC = () => {
     } else {
       setSelectedId(null);
     }
+    setMobileView('list');
   }, [selectedGroup]);
 
   const groupCounts = useMemo(() => {
@@ -301,6 +304,24 @@ export const Passwords: React.FC = () => {
           <Plus className="w-4 h-4" />
           <span>Save a Password</span>
         </button>
+      </div>
+
+      {/* Mobile Group Tabs (shown only on small screens, above main layout) */}
+      <div className="lg:hidden overflow-x-auto no-scrollbar flex gap-1.5 pb-1">
+        {PREDEFINED_GROUPS.map(g => (
+          <button
+            key={g.label}
+            onClick={() => setSelectedGroup(g.label)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
+              selectedGroup === g.label
+                ? 'bg-blue-600 text-white'
+                : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
+            }`}
+          >
+            <span>{g.emoji}</span>
+            <span>{g.label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Main Layout: Groups | List | Detail */}
@@ -346,28 +367,10 @@ export const Passwords: React.FC = () => {
           </div>
         </div>
 
-        {/* Mobile Group Tabs */}
-        <div className="lg:hidden col-span-full overflow-x-auto no-scrollbar flex gap-1.5 pb-1">
-          {PREDEFINED_GROUPS.map(g => (
-            <button
-              key={g.label}
-              onClick={() => setSelectedGroup(g.label)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
-                selectedGroup === g.label
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
-              }`}
-            >
-              <span>{g.emoji}</span>
-              <span>{g.label}</span>
-            </button>
-          ))}
-        </div>
-
         {/* Main Grid: List + Detail */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0 items-start">
-        {/* Left Side: List */}
-        <div className="glass-panel rounded-2xl border border-white/10 overflow-hidden space-y-1">
+        {/* Left Side: List — hidden on mobile when detail is shown */}
+        <div className={`glass-panel rounded-2xl border border-white/10 overflow-hidden space-y-1 ${mobileView === 'detail' ? 'hidden lg:block' : ''}`}>
           <div className="p-3 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
               {activeGroupDef.emoji} {activeGroupDef.label} ({groupFilteredPasswords.length})
@@ -380,7 +383,7 @@ export const Passwords: React.FC = () => {
               return (
                 <div
                   key={pwd.id}
-                  onClick={() => setSelectedId(pwd.id)}
+                  onClick={() => { setSelectedId(pwd.id); setMobileView('detail'); }}
                   className={`p-3.5 flex items-center justify-between transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-gradient-to-r from-blue-600/20 to-indigo-600/10 border-l-4 border-blue-500'
@@ -417,14 +420,21 @@ export const Passwords: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Side: Detail */}
-        <div className="lg:col-span-2 col-span-1">
+        {/* Right Side: Detail — hidden on mobile when list view is shown */}
+        <div className={`lg:col-span-2 col-span-1 ${mobileView === 'list' ? 'hidden lg:block' : ''}`}>
           {selectedPwd ? (
             <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
 
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setMobileView('list')}
+                    className="lg:hidden p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                    title="Back to list"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-slate-900 via-slate-900 to-blue-950 border border-white/10 flex items-center justify-center text-blue-400 shadow-xl">
                     <KeyRound className="w-6 h-6" />
                   </div>
