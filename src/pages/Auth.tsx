@@ -40,7 +40,8 @@ export const Auth: React.FC = () => {
     const enabled = localStorage.getItem('vaultify-biometric-enabled') === 'true';
     const storedEmail = localStorage.getItem('vaultify-biometric-email') || '';
     const credId = localStorage.getItem('vaultify-biometric-credential-id') || '';
-    if (enabled && storedEmail && credId) {
+    const refreshToken = localStorage.getItem('vaultify-biometric-refresh-token') || '';
+    if (enabled && storedEmail && credId && refreshToken) {
       setBiometricAvailable(true);
       setBiometricEmail(storedEmail);
     }
@@ -75,10 +76,12 @@ export const Auth: React.FC = () => {
     }
 
     const credentialIdB64 = localStorage.getItem('vaultify-biometric-credential-id');
-    if (!credentialIdB64) {
+    const storedRefreshToken = localStorage.getItem('vaultify-biometric-refresh-token');
+
+    if (!credentialIdB64 || !storedRefreshToken) {
       toast({
         title: 'Biometric Not Set Up',
-        description: 'Please sign in with email first, then enable biometric in Settings.',
+        description: 'Please sign in with your password first, then enable biometric in Settings.',
         type: 'error',
       });
       return;
@@ -86,6 +89,8 @@ export const Auth: React.FC = () => {
 
     setIsBiometricLoading(true);
     try {
+      // Step 1: Ask the device to verify ownership via its built-in lock
+      // (fingerprint / face / PIN — whatever the device supports)
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
@@ -107,38 +112,44 @@ export const Auth: React.FC = () => {
         },
       });
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await doLoginFromSession(session);
-        return;
-      }
-
-      const { data: { session: refreshed } } = await supabase.auth.refreshSession();
-      if (refreshed?.user) {
-        await doLoginFromSession(refreshed);
-        return;
-      }
-
-      toast({
-        title: 'Session Expired',
-        description: `Your session has expired. Please sign in with your password once to restore biometric access.`,
-        type: 'error',
+      // Step 2: Device unlocked — use the stored refresh token to sign back into Supabase
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: storedRefreshToken,
       });
-      setEmail(biometricEmail);
+
+      if (error || !data.session?.user) {
+        // Refresh token expired (happens after ~60 days of no sign-in)
+        localStorage.removeItem('vaultify-biometric-refresh-token');
+        toast({
+          title: 'Session Expired',
+          description: 'Please sign in with your password once to relink biometric access.',
+          type: 'error',
+        });
+        setEmail(biometricEmail);
+        return;
+      }
+
+      // Rotate the stored refresh token (Supabase issues a new one each time)
+      if (data.session.refresh_token) {
+        localStorage.setItem('vaultify-biometric-refresh-token', data.session.refresh_token);
+      }
+
+      await doLoginFromSession(data.session);
     } catch (err: any) {
       const msg = (err?.message || err?.name || '').toLowerCase();
-      if (msg.includes('cancel') || msg.includes('notallowed') || msg.includes('abort')) {
-        toast({ title: 'Cancelled', description: 'Biometric verification was cancelled.', type: 'info' });
-      } else if (msg.includes('security') || msg.includes('invalid') || msg.includes('not-allowed')) {
+      if (msg.includes('cancel') || msg.includes('notallowed') || msg.includes('abort') || msg.includes('user')) {
+        toast({ title: 'Cancelled', description: 'Verification was cancelled.', type: 'info' });
+      } else if (msg.includes('security') || msg.includes('invalid') || msg.includes('unknown') || msg.includes('not found')) {
+        // Credential not found — likely opened from a different URL than where it was registered
         toast({
-          title: 'Biometric Failed',
-          description: 'Verification failed. You may need to re-set up biometric in Settings.',
+          title: 'Credential Not Found',
+          description: 'This can happen if you access the app from a different link. Please disable and re-enable biometric in Settings.',
           type: 'error',
         });
       } else {
         toast({
-          title: 'Biometric Failed',
-          description: 'Could not verify. Please use email and password.',
+          title: 'Device Unlock Failed',
+          description: 'Could not verify your identity. Please use email and password.',
           type: 'error',
         });
       }
@@ -297,17 +308,18 @@ export const Auth: React.FC = () => {
                 {isBiometricLoading ? (
                   <>
                     <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying with biometric...</span>
+                    <span>Verifying... unlock your device</span>
                   </>
                 ) : (
                   <>
                     <Fingerprint className="w-5 h-5" />
-                    <span>Sign in with Fingerprint / Face</span>
+                    <span>Sign in with Fingerprint / Device Lock</span>
                   </>
                 )}
               </button>
-              <p className="text-center text-[10px] text-gray-600 mt-1.5">
-                Account: <span className="text-gray-400">{biometricEmail}</span>
+              <p className="text-center text-[10px] text-gray-500 mt-1.5 leading-relaxed">
+                Your device will ask for fingerprint, face, or PIN &mdash; use any to sign in.<br />
+                <span className="text-gray-600">Account: {biometricEmail}</span>
               </p>
 
               <div className="flex items-center gap-3 mt-4">

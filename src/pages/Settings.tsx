@@ -309,9 +309,19 @@ export const Settings: React.FC = () => {
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       const credId = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
+      // Save the Supabase refresh token so we can restore the session after device unlock
+      let refreshToken = '';
+      if (supabase) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        refreshToken = sessionData?.session?.refresh_token || '';
+      }
+
       localStorage.setItem('vaultify-biometric-enabled', 'true');
       localStorage.setItem('vaultify-biometric-email', user?.email || '');
       localStorage.setItem('vaultify-biometric-credential-id', credId);
+      if (refreshToken) {
+        localStorage.setItem('vaultify-biometric-refresh-token', refreshToken);
+      }
       setBiometricEnabled(true);
       toast({
         title: 'Biometric Enabled!',
@@ -338,6 +348,7 @@ export const Settings: React.FC = () => {
     localStorage.removeItem('vaultify-biometric-enabled');
     localStorage.removeItem('vaultify-biometric-email');
     localStorage.removeItem('vaultify-biometric-credential-id');
+    localStorage.removeItem('vaultify-biometric-refresh-token');
     setBiometricEnabled(false);
     toast({ title: 'Biometric Disabled', type: 'info' });
   };
@@ -635,9 +646,9 @@ export const Settings: React.FC = () => {
                   <div className="space-y-2">
                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">How it works</p>
                     {[
-                      { step: '1', text: 'Tap the button below — your device will ask you to scan your finger or face.' },
-                      { step: '2', text: 'When the system prompt appears, place your finger on the sensor or look at the camera.' },
-                      { step: '3', text: 'Once registered, the Login screen will show a "Sign in with Fingerprint / Face" button.' },
+                      { step: '1', text: 'Tap the button below — your device will show a "Confirm screen lock" or passkey prompt.' },
+                      { step: '2', text: 'Use fingerprint, face, or your PIN/password to confirm. Fingerprint works on the lock screen too — just tap the sensor.' },
+                      { step: '3', text: 'Once done, the Login screen will show a quick-access button to sign in without typing your password.' },
                     ].map(({ step, text }) => (
                       <div key={step} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
                         <div className="w-5 h-5 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">
