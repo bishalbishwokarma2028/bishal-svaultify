@@ -481,7 +481,7 @@ export const Vault: React.FC = () => {
                           toast({ title: 'Folder Deleted', type: 'info' });
                         }
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-white/10 text-gray-500 hover:text-rose-400 transition-all"
+                      className="sm:opacity-0 sm:group-hover:opacity-100 p-1.5 rounded-lg hover:bg-white/10 text-gray-500 hover:text-rose-400 transition-all"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -539,7 +539,7 @@ export const Vault: React.FC = () => {
 
                         <button
                           onClick={(e) => openEditFile(file, e)}
-                          className="p-1.5 rounded-lg text-gray-600 hover:text-blue-400 transition-colors hidden sm:block"
+                          className="p-1.5 rounded-lg text-gray-600 hover:text-blue-400 transition-colors"
                           title="Rename"
                         >
                           <Pencil className="w-3.5 h-3.5" />
@@ -616,8 +616,16 @@ export const Vault: React.FC = () => {
 
                       <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                         <button
+                          onClick={(e) => openEditFile(file, e)}
+                          className="p-2 rounded-lg text-gray-500 hover:text-blue-400 hover:bg-white/5 transition-all"
+                          title="Rename"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+
+                        <button
                           onClick={(e) => { e.stopPropagation(); setShareFile(file); }}
-                          className="p-2 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-all hidden sm:block"
+                          className="p-2 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-all"
                           title="Share"
                         >
                           <Share2 className="w-4 h-4" />
@@ -746,6 +754,14 @@ export const Vault: React.FC = () => {
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span className="hidden xs:inline">Download</span>
+                  </button>
+
+                  <button
+                    onClick={(e) => { setPreviewFile(null); openEditFile(previewFile, e); }}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-white/10 transition-colors"
+                    title="Rename"
+                  >
+                    <Pencil className="w-4 h-4" />
                   </button>
 
                   <button
