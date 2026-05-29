@@ -13,7 +13,7 @@ import {
   ActiveSession
 } from '../types';
 import { supabase } from '../lib/supabase';
-import { idbStorage, storeFileContent, deleteFileContent, LOCAL_FILE_PREFIX } from '../lib/localDB';
+import { idbStorage, storeFileContent, deleteFileContent, LOCAL_FILE_PREFIX, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
 import { saveRequest, isEmailApproved } from '../lib/premiumRequests';
 
 export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB
@@ -785,7 +785,20 @@ export const useVaultStore = create<VaultStore>()(
           // Merge: combine Supabase data with local-only items
           const state = get();
           const localOnlyFolders = state.folders.filter(f => !sbFolderIds.has(f.id));
-          const localOnlyFiles = state.files.filter(f => !sbFileIds.has(f.id));
+          // A file is truly "local-only pending sync" only if its id is embedded in its own url
+          // (i.e. local://id === id).  Files that were previously synced to Supabase and then
+          // deleted there will have a Supabase UUID as id but a different localId in their url —
+          // those must NOT be preserved; they should be treated as deleted on this device too.
+          const localOnlyFiles = state.files.filter(f => {
+            if (sbFileIds.has(f.id)) return false; // in Supabase — handled above
+            // Only preserve if this file has never reached Supabase yet
+            // (its id still matches the local placeholder id embedded in its url)
+            if (isLocalFileUrl(f.url)) {
+              return getFileIdFromUrl(f.url) === f.id;
+            }
+            // Non-local URL and not in Supabase → was synced then deleted remotely → remove
+            return false;
+          });
           const localOnlyPasswords = state.passwords.filter(p => !sbPwdIds.has(p.id));
           const localOnlyNotes = state.notes.filter(n => !sbNoteIds.has(n.id));
           const localOnlyReminders = state.reminders.filter(r => !sbRemIds.has(r.id));

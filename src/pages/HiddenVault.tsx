@@ -69,6 +69,10 @@ export const HiddenVault: React.FC = () => {
   const [selectedForMove, setSelectedForMove] = useState<string[]>([]);
   const [isMovingFiles, setIsMovingFiles] = useState(false);
 
+  /* ── Delete-originals reminder modal ── */
+  const [showDeleteReminderModal, setShowDeleteReminderModal] = useState(false);
+  const [justAddedCount, setJustAddedCount] = useState(0);
+
   /* ── Delete confirmation ── */
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<import('../types').FileItem | null>(null);
 
@@ -324,13 +328,8 @@ export const HiddenVault: React.FC = () => {
 
     if (added > 0) {
       toast({ title: `${added === 1 ? '1 file' : `${added} files`} added to Secret Vault`, type: 'success' });
-      setTimeout(() => {
-        toast({
-          title: 'Remember to delete the originals',
-          description: 'Delete the original file(s) from your device gallery or Files app so they only exist here.',
-          type: 'info'
-        });
-      }, 1800);
+      setJustAddedCount(added);
+      setShowDeleteReminderModal(true);
     }
   };
 
@@ -706,6 +705,75 @@ export const HiddenVault: React.FC = () => {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── DELETE ORIGINALS REMINDER MODAL ── */}
+      <AnimatePresence>
+        {showDeleteReminderModal && (
+          <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              onClick={() => setShowDeleteReminderModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 40, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="relative w-full max-w-sm glass-panel-premium rounded-3xl border border-amber-500/30 shadow-2xl z-10 overflow-hidden"
+            >
+              {/* Amber top bar */}
+              <div className="h-1 w-full bg-gradient-to-r from-amber-500 to-orange-500" />
+
+              <div className="p-6 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Smartphone className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">One more step — delete the originals</h3>
+                    <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                      {justAddedCount === 1 ? 'This file is' : `These ${justAddedCount} files are`} now safely in your vault.
+                      But the originals are <span className="text-amber-400 font-semibold">still in your device gallery</span> — anyone who opens your Photos app can still see them.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-4 space-y-3">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">How to delete from your device</p>
+                  <div className="space-y-2.5">
+                    {[
+                      { step: '1', text: 'Open your Photos or Gallery app' },
+                      { step: '2', text: 'Find the file(s) you just added to the vault' },
+                      { step: '3', text: 'Delete them — they\'re safe in Vaultify now' },
+                      { step: '4', text: 'Empty your Trash / Recently Deleted folder too' },
+                    ].map(({ step, text }) => (
+                      <div key={step} className="flex items-center gap-3">
+                        <div className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                          <span className="text-[9px] font-bold text-amber-400">{step}</span>
+                        </div>
+                        <p className="text-xs text-gray-300">{text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowDeleteReminderModal(false)}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-bold transition-all shadow-lg"
+                >
+                  Got it — I'll delete them now
+                </button>
+                <p className="text-center text-[10px] text-gray-600">
+                  Your vault copy is safe even after deleting from your device
+                </p>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
