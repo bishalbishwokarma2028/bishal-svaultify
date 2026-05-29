@@ -49,16 +49,24 @@ const convertHeicToJpeg = async (file: File): Promise<File> => {
     file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
   if (!isHeic) return file;
   try {
-    const heic2any = (await import('heic2any')).default;
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 20000)
-    );
-    const conversion = (heic2any as any)({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-    const result = await Promise.race([conversion, timeout]);
-    const blob = Array.isArray(result) ? result[0] : result;
-    return new File([blob as Blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    const mod = await import('heic2any');
+    const heic2any = (mod as any).default ?? mod;
+    if (typeof heic2any !== 'function') return file;
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('timeout')), 30000);
+    });
+    const result = await Promise.race([
+      heic2any({ blob: file, toType: 'image/jpeg', quality: 0.82 }),
+      timeout
+    ]).finally(() => clearTimeout(timeoutId!));
+
+    const raw = Array.isArray(result) ? result[0] : result;
+    if (!(raw instanceof Blob)) return file;
+    return new File([raw], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
   } catch {
-    return new File([file], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    return file; // keep original on any failure
   }
 };
 

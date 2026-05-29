@@ -311,14 +311,22 @@ export const useVaultStore = create<VaultStore>()(
               expiry_date: fileData.expiryDate || null, user_id: userId,
             }]).select().single();
             if (!error && data) {
-              const newUrl = fileContent ? `${LOCAL_FILE_PREFIX}${data.id}` : fileUrl;
               if (fileContent) {
-                storeFileContent(data.id, fileContent).catch(() => {});
-                deleteFileContent(localId).catch(() => {});
+                // Keep content under localId — do NOT rename the IDB entry.
+                // Moving content to data.id and deleting localId is a race condition:
+                // deleteFileContent runs before storeFileContent finishes for large files,
+                // causing "couldn't load" on open. URL stays as local://localId.
+                set((state) => ({
+                  files: state.files.map(f => f.id === localId ? { ...f, id: data.id } : f)
+                }));
+              } else {
+                set((state) => ({
+                  files: state.files.map(f => f.id === localId
+                    ? { ...f, id: data.id, url: data.url || fileUrl }
+                    : f
+                  )
+                }));
               }
-              set((state) => ({
-                files: state.files.map(f => f.id === localId ? { ...f, id: data.id, url: newUrl } : f)
-              }));
             }
           } catch { /* keep local */ }
         }

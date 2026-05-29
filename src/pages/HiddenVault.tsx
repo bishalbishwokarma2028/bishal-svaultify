@@ -72,6 +72,8 @@ export const HiddenVault: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
 
+  const [previewError, setPreviewError] = useState(false);
+
   const openPreview = (file: import('../types').FileItem) => {
     if (previewObjectUrlRef.current) {
       URL.revokeObjectURL(previewObjectUrlRef.current);
@@ -79,18 +81,27 @@ export const HiddenVault: React.FC = () => {
     }
     setPreviewingFile(file);
     setPreviewUrl(null);
+    setPreviewError(false);
     setZoomLevel(1);
     setPreviewLoading(true);
     if (isLocalFileUrl(file.url)) {
       getFileContentUrl(getFileIdFromUrl(file.url)).then(url => {
-        if (url && url.startsWith('blob:')) previewObjectUrlRef.current = url;
-        setPreviewUrl(url || null);
+        if (url) {
+          if (url.startsWith('blob:')) previewObjectUrlRef.current = url;
+          setPreviewUrl(url);
+        } else {
+          setPreviewError(true);
+        }
         setPreviewLoading(false);
-      }).catch(() => setPreviewLoading(false));
+      }).catch(() => {
+        setPreviewError(true);
+        setPreviewLoading(false);
+      });
     } else if (file.url) {
       setPreviewUrl(file.url);
       setPreviewLoading(false);
     } else {
+      setPreviewError(true);
       setPreviewLoading(false);
     }
   };
@@ -159,20 +170,30 @@ export const HiddenVault: React.FC = () => {
   };
 
   const convertHeicToJpeg = async (file: File): Promise<File> => {
-    const isHeic = file.type === 'image/heic' || file.type === 'image/heif' ||
-      file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
-    if (!isHeic) return file;
     try {
-      const heic2any = (await import('heic2any')).default;
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 20000)
-      );
-      const conversion = (heic2any as any)({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-      const result = await Promise.race([conversion, timeout]);
-      const blob = Array.isArray(result) ? result[0] : result;
-      return new File([blob as Blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+      const mod = await import('heic2any');
+      const heic2any = (mod as any).default ?? mod;
+      if (typeof heic2any !== 'function') return file; // library not available, keep original
+
+      const timeoutMs = 30000; // 30 s — large HEIC photos need time
+      let timeoutId: ReturnType<typeof setTimeout>;
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+      });
+
+      const result = await Promise.race([
+        heic2any({ blob: file, toType: 'image/jpeg', quality: 0.82 }),
+        timeout
+      ]).finally(() => clearTimeout(timeoutId!));
+
+      const raw = Array.isArray(result) ? result[0] : result;
+      if (!(raw instanceof Blob)) return file; // unexpected output, keep original
+
+      const jpegName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+      return new File([raw], jpegName, { type: 'image/jpeg' });
     } catch {
-      return new File([file], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+      // Any failure → keep the original HEIC file (Safari can show it natively)
+      return file;
     }
   };
 
@@ -181,12 +202,14 @@ export const HiddenVault: React.FC = () => {
     if (!fileList || fileList.length === 0) return;
     setIsAdding(true);
 
-    try {
-      for (let i = 0; i < fileList.length; i++) {
-        let file = fileList[i];
-        const needsConversion = file.type === 'image/heic' || file.type === 'image/heif' ||
+    let added = 0;
+    for (let i = 0; i < fileList.length; i++) {
+      let file = fileList[i];
+      try {
+        const isHeic = file.type === 'image/heic' || file.type === 'image/heif' ||
           file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
-        if (needsConversion) {
+
+        if (isHeic) {
           setIsConverting(true);
           file = await convertHeicToJpeg(file);
           setIsConverting(false);
@@ -203,18 +226,27 @@ export const HiddenVault: React.FC = () => {
           isStarred: false,
           isArchived: false
         }, file);
-      }
 
+        added++;
+      } catch (err: any) {
+        setIsConverting(false);
+        if (err?.message === 'STORAGE_LIMIT_EXCEEDED') {
+          toast({ title: 'Storage Full', description: 'You have reached the 5 GB free limit.', type: 'error' });
+        } else {
+          toast({ title: `Could not add "${file.name}"`, description: 'File may be corrupted or too large for this device.', type: 'error' });
+        }
+      }
+    }
+
+    setIsConverting(false);
+    setIsAdding(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    if (added > 0) {
       toast({
-        title: `${fileList.length === 1 ? '1 file' : `${fileList.length} files`} added to Secret Vault`,
+        title: `${added === 1 ? '1 file' : `${added} files`} added to Secret Vault`,
         type: 'success'
       });
-    } catch {
-      toast({ title: 'Could not add file', description: 'Try a smaller file or different format.', type: 'error' });
-    } finally {
-      setIsConverting(false);
-      setIsAdding(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -583,7 +615,7 @@ export const HiddenVault: React.FC = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/90 backdrop-blur-md"
-              onClick={() => { setPreviewingFile(null); setPreviewUrl(null); }}
+              onClick={() => { setPreviewingFile(null); setPreviewUrl(null); setPreviewError(false); }}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -644,7 +676,7 @@ export const HiddenVault: React.FC = () => {
                     </a>
                   )}
                   <button
-                    onClick={() => { setPreviewingFile(null); setPreviewUrl(null); }}
+                    onClick={() => { setPreviewingFile(null); setPreviewUrl(null); setPreviewError(false); }}
                     className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-all"
                   >
                     ✕
@@ -658,6 +690,27 @@ export const HiddenVault: React.FC = () => {
                   <div className="flex flex-col items-center gap-3 text-center p-8">
                     <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
                     <p className="text-xs text-gray-400">Loading secret file...</p>
+                  </div>
+                ) : previewError ? (
+                  <div className="flex flex-col items-center gap-4 text-center p-8">
+                    <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center">
+                      <svg className="w-8 h-8 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white">File content not available</p>
+                      <p className="text-xs text-gray-400 mt-1.5 max-w-xs">
+                        This file's content is not stored on this device.<br/>
+                        It may have been uploaded on a different device or the storage was cleared.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => { setPreviewingFile(null); setPreviewUrl(null); setPreviewError(false); }}
+                      className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white font-semibold transition-all"
+                    >
+                      Close
+                    </button>
                   </div>
                 ) : previewUrl ? (
                   (() => {
