@@ -50,11 +50,15 @@ const convertHeicToJpeg = async (file: File): Promise<File> => {
   if (!isHeic) return file;
   try {
     const heic2any = (await import('heic2any')).default;
-    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
-    const blob = Array.isArray(converted) ? converted[0] : converted;
-    return new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 20000)
+    );
+    const conversion = (heic2any as any)({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+    const result = await Promise.race([conversion, timeout]);
+    const blob = Array.isArray(result) ? result[0] : result;
+    return new File([blob as Blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
   } catch {
-    return file;
+    return new File([file], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
   }
 };
 
@@ -95,6 +99,7 @@ export const Vault: React.FC = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadCategory, setUploadCategory] = useState<CategoryType>('Personal IDs');
   const [isUploading, setIsUploading] = useState(false);
+  const [isConvertingHeic, setIsConvertingHeic] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewObjectUrlRef = useRef<string | null>(null);
 
@@ -213,7 +218,11 @@ export const Vault: React.FC = () => {
         let file = fileList[i];
 
         // Convert HEIC/HEIF images to JPEG before saving
+        const needsConversion = file.type === 'image/heic' || file.type === 'image/heif' ||
+          file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+        if (needsConversion) setIsConvertingHeic(true);
         file = await convertHeicToJpeg(file);
+        if (needsConversion) setIsConvertingHeic(false);
 
         await addFile({
           name: file.name,
@@ -241,6 +250,7 @@ export const Vault: React.FC = () => {
         toast({ title: 'Upload Failed', description: 'Could not save the file. Try a smaller file.', type: 'error' });
       }
     } finally {
+      setIsConvertingHeic(false);
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -985,7 +995,13 @@ export const Vault: React.FC = () => {
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   disabled={isUploading}
                 />
-                {isUploading ? (
+                {isConvertingHeic ? (
+                  <>
+                    <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                    <p className="text-xs font-semibold text-white">Converting HEIC Image</p>
+                    <p className="text-[10px] text-gray-400 mt-1">Converting to JPEG format... please wait</p>
+                  </>
+                ) : isUploading ? (
                   <>
                     <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                     <p className="text-xs font-semibold text-white">Saving to device...</p>

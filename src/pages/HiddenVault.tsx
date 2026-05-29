@@ -61,6 +61,7 @@ export const HiddenVault: React.FC = () => {
 
   /* ── File add ── */
   const [isAdding, setIsAdding] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
 
   /* ── Delete confirmation ── */
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<import('../types').FileItem | null>(null);
@@ -163,10 +164,16 @@ export const HiddenVault: React.FC = () => {
     if (!isHeic) return file;
     try {
       const heic2any = (await import('heic2any')).default;
-      const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
-      const blob = Array.isArray(converted) ? converted[0] : converted;
-      return new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
-    } catch { return file; }
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 20000)
+      );
+      const conversion = (heic2any as any)({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+      const result = await Promise.race([conversion, timeout]);
+      const blob = Array.isArray(result) ? result[0] : result;
+      return new File([blob as Blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    } catch {
+      return new File([file], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    }
   };
 
   const handleAddFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,7 +184,13 @@ export const HiddenVault: React.FC = () => {
     try {
       for (let i = 0; i < fileList.length; i++) {
         let file = fileList[i];
-        file = await convertHeicToJpeg(file);
+        const needsConversion = file.type === 'image/heic' || file.type === 'image/heif' ||
+          file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+        if (needsConversion) {
+          setIsConverting(true);
+          file = await convertHeicToJpeg(file);
+          setIsConverting(false);
+        }
 
         await addFile({
           name: file.name,
@@ -199,6 +212,7 @@ export const HiddenVault: React.FC = () => {
     } catch {
       toast({ title: 'Could not add file', description: 'Try a smaller file or different format.', type: 'error' });
     } finally {
+      setIsConverting(false);
       setIsAdding(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -468,15 +482,28 @@ export const HiddenVault: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isAdding}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-lg flex items-center gap-1.5 self-start sm:self-auto"
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-lg glow-purple flex items-center gap-1.5 self-start sm:self-auto"
               >
                 {isAdding ? (
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <Plus className="w-4 h-4" />
                 )}
-                <span>{isAdding ? 'Adding...' : 'Add File'}</span>
+                <span>{isConverting ? 'Converting HEIC...' : isAdding ? 'Saving...' : 'Add File'}</span>
               </button>
+
+              {/* HEIC Converting overlay */}
+              {isConverting && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-sm">
+                  <div className="bg-slate-900 border border-purple-500/40 rounded-2xl p-8 text-center space-y-4 shadow-2xl max-w-xs w-full mx-4">
+                    <div className="w-12 h-12 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                    <div>
+                      <p className="text-sm font-bold text-white">Converting HEIC Image</p>
+                      <p className="text-xs text-gray-400 mt-1.5">Converting to JPEG format for compatibility. This may take a moment for large photos.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Tips */}
@@ -633,48 +660,63 @@ export const HiddenVault: React.FC = () => {
                     <p className="text-xs text-gray-400">Loading secret file...</p>
                   </div>
                 ) : previewUrl ? (
-                  <>
-                    {previewingFile.type.startsWith('image/') && (
-                      <div className="overflow-auto flex items-center justify-center w-full h-full p-4">
-                        <img
-                          src={previewUrl}
-                          alt={previewingFile.name}
-                          className="rounded shadow-xl transition-transform duration-200 object-contain"
-                          style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', maxWidth: zoomLevel <= 1 ? '100%' : 'none', maxHeight: zoomLevel <= 1 ? '100%' : 'none' }}
-                        />
-                      </div>
-                    )}
-                    {previewingFile.type.startsWith('video/') && (
-                      <video src={previewUrl} controls className="max-w-full max-h-full p-4" />
-                    )}
-                    {previewingFile.type.startsWith('audio/') && (
-                      <div className="p-8 flex flex-col items-center gap-4">
-                        <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center">
-                          <FileText className="w-8 h-8 text-purple-400" />
-                        </div>
-                        <audio src={previewUrl} controls className="w-full max-w-xs" />
-                      </div>
-                    )}
-                    {previewingFile.type === 'application/pdf' && (
-                      <iframe src={previewUrl} className="w-full h-full min-h-[500px]" title={previewingFile.name} />
-                    )}
-                    {!previewingFile.type.startsWith('image/') && !previewingFile.type.startsWith('video/') && !previewingFile.type.startsWith('audio/') && previewingFile.type !== 'application/pdf' && (
-                      <div className="p-8 flex flex-col items-center gap-4 text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center">
-                          <File className="w-8 h-8 text-purple-400" />
-                        </div>
-                        <p className="text-sm font-semibold text-white">{previewingFile.name}</p>
-                        <p className="text-xs text-gray-400">Preview not available for this file type.</p>
-                        <a
-                          href={previewUrl}
-                          download={previewingFile.name}
-                          className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all"
-                        >
-                          Download File
-                        </a>
-                      </div>
-                    )}
-                  </>
+                  (() => {
+                    const ft = previewingFile.type || '';
+                    const fn = previewingFile.name.toLowerCase();
+                    const isImg = ft.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg|heic|heif)$/.test(fn);
+                    const isVid = ft.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|m4v|ogv|3gp)$/.test(fn);
+                    const isAud = ft.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac|opus)$/.test(fn);
+                    const isPdf = ft === 'application/pdf' || fn.endsWith('.pdf');
+                    return (
+                      <>
+                        {isImg && !isVid && (
+                          <div className="overflow-auto flex items-center justify-center w-full h-full p-4">
+                            <img
+                              src={previewUrl}
+                              alt={previewingFile.name}
+                              className="rounded-xl shadow-2xl transition-transform duration-200 object-contain"
+                              style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', maxWidth: zoomLevel <= 1 ? '100%' : 'none', maxHeight: zoomLevel <= 1 ? '100%' : 'none' }}
+                            />
+                          </div>
+                        )}
+                        {isVid && (
+                          <div className="w-full h-full flex items-center justify-center p-4">
+                            <video
+                              src={previewUrl}
+                              controls
+                              preload="metadata"
+                              playsInline
+                              className="max-w-full max-h-full rounded-xl shadow-2xl"
+                              style={{ maxHeight: '70vh' }}
+                            />
+                          </div>
+                        )}
+                        {isAud && (
+                          <div className="p-8 flex flex-col items-center gap-4">
+                            <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center">
+                              <FileText className="w-8 h-8 text-purple-400" />
+                            </div>
+                            <audio src={previewUrl} controls className="w-full max-w-xs" />
+                          </div>
+                        )}
+                        {isPdf && (
+                          <iframe src={previewUrl} className="w-full h-full min-h-[500px]" title={previewingFile.name} />
+                        )}
+                        {!isImg && !isVid && !isAud && !isPdf && (
+                          <div className="p-8 flex flex-col items-center gap-4 text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center">
+                              <File className="w-8 h-8 text-purple-400" />
+                            </div>
+                            <p className="text-sm font-semibold text-white">{previewingFile.name}</p>
+                            <p className="text-xs text-gray-400">Preview not available for this file type.</p>
+                            <a href={previewUrl} download={previewingFile.name} className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all">
+                              Download File
+                            </a>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
                 ) : (
                   <div className="p-8 flex flex-col items-center gap-4 text-center">
                     <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
@@ -800,28 +842,59 @@ interface FileCardProps {
 
 const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, onDelete, onView }) => {
   const [thumbUrl, setThumbUrl] = React.useState<string | null>(null);
+  const thumbUrlRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    if (!file.type.startsWith('image/')) return;
-    if (isLocalFileUrl(file.url)) {
-      getFileContent(getFileIdFromUrl(file.url)).then(url => setThumbUrl(url || null)).catch(() => {});
-    } else if (file.url) {
-      setThumbUrl(file.url);
-    }
-  }, [file]);
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|heic|heif)$/i.test(file.name);
+    if (!isImage) return;
+    let cancelled = false;
+    const load = async () => {
+      if (isLocalFileUrl(file.url)) {
+        try {
+          const url = await getFileContentUrl(getFileIdFromUrl(file.url));
+          if (cancelled) { if (url?.startsWith('blob:')) URL.revokeObjectURL(url); return; }
+          if (url?.startsWith('blob:')) thumbUrlRef.current = url;
+          setThumbUrl(url || null);
+        } catch { /* ignore */ }
+      } else if (file.url) {
+        if (!cancelled) setThumbUrl(file.url);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+      if (thumbUrlRef.current) { URL.revokeObjectURL(thumbUrlRef.current); thumbUrlRef.current = null; }
+    };
+  }, [file.url, file.type, file.name]);
+
+  const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|m4v|ogv|3gp)$/i.test(file.name);
 
   return (
     <div
       onClick={onView}
-      className="p-4 rounded-2xl glass-panel border border-white/10 flex flex-col justify-between group relative overflow-hidden cursor-pointer hover:border-purple-500/40 hover:bg-purple-500/5 transition-all"
+      className="p-4 rounded-2xl border flex flex-col justify-between group relative overflow-hidden cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+      style={{
+        background: 'linear-gradient(135deg, rgba(88,28,135,0.12) 0%, rgba(13,18,45,0.85) 100%)',
+        borderColor: 'rgba(139,92,246,0.2)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+      }}
     >
       {thumbUrl ? (
-        <div className="mb-3 rounded-xl overflow-hidden h-28 bg-black/30">
+        <div className="mb-3 rounded-xl overflow-hidden h-28 bg-black/30 relative">
           <img src={thumbUrl} alt={file.name} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+        </div>
+      ) : isVideo ? (
+        <div className="mb-3 rounded-xl h-20 flex items-center justify-center relative overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(99,102,241,0.1))' }}>
+          <div className="w-10 h-10 rounded-full bg-purple-600/80 flex items-center justify-center shadow-lg">
+            <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </div>
         </div>
       ) : (
-        <div className="mb-3 rounded-xl h-20 bg-white/[0.03] border border-white/5 flex items-center justify-center">
-          <div className={`p-3 rounded-xl ${getFileColor(file.type)} opacity-60`}>
+        <div className="mb-3 rounded-xl h-20 flex items-center justify-center relative overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(99,102,241,0.06))' }}>
+          <div className={`p-3 rounded-xl ${getFileColor(file.type)}`}>
             {getFileIcon(file.type)}
           </div>
         </div>
