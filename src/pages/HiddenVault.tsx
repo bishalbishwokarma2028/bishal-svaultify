@@ -16,13 +16,14 @@ import {
   Info,
   KeyRound,
   Eye,
-  EyeIcon,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Download,
+  Smartphone
 } from 'lucide-react';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
-import { getFileContentUrl, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
+import { getFileContent, getFileContentUrl, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
 import { ConfirmDeleteModal } from '../components/ui/ConfirmDeleteModal';
 
 export const HiddenVault: React.FC = () => {
@@ -62,6 +63,11 @@ export const HiddenVault: React.FC = () => {
   /* ── File add ── */
   const [isAdding, setIsAdding] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
+
+  /* ── Move to Device ── */
+  const [movingToDevice, setMovingToDevice] = useState(false);
+  const [selectedForMove, setSelectedForMove] = useState<string[]>([]);
+  const [isMovingFiles, setIsMovingFiles] = useState(false);
 
   /* ── Delete confirmation ── */
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<import('../types').FileItem | null>(null);
@@ -169,6 +175,79 @@ export const HiddenVault: React.FC = () => {
     return 'text-purple-400 bg-purple-500/10';
   };
 
+  /* ── Move to Device helpers ── */
+  const toggleSelectForMove = (fileId: string) => {
+    setSelectedForMove(prev =>
+      prev.includes(fileId) ? prev.filter(id => id !== fileId) : [...prev, fileId]
+    );
+  };
+
+  const downloadFileToDevice = async (file: import('../types').FileItem): Promise<boolean> => {
+    try {
+      let blob: Blob | null = null;
+      if (isLocalFileUrl(file.url)) {
+        const content = await getFileContent(getFileIdFromUrl(file.url));
+        if (!content) return false;
+        blob = content instanceof Blob ? content : new Blob([content as string], { type: file.type });
+      } else if (file.url) {
+        const resp = await fetch(file.url);
+        blob = await resp.blob();
+      }
+      if (!blob) return false;
+
+      // Try Web Share API first — on iOS it shows "Save to Photos" option
+      if (typeof navigator.share === 'function') {
+        try {
+          const FileClass = (globalThis as any).File as new (parts: BlobPart[], name: string, opts?: FilePropertyBag) => File;
+          const shareFile = new FileClass([blob], file.name, { type: file.type || blob.type });
+          if (navigator.canShare?.({ files: [shareFile] })) {
+            await navigator.share({ files: [shareFile], title: file.name });
+            return true;
+          }
+        } catch (e: any) {
+          if (e?.name !== 'AbortError') { /* user cancelled, fall through */ }
+          else return false; // user cancelled share sheet — don't delete
+        }
+      }
+
+      // Fallback: programmatic download (<a download>)
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleMoveToDevice = async () => {
+    if (selectedForMove.length === 0) return;
+    setIsMovingFiles(true);
+    let moved = 0;
+    for (const fileId of selectedForMove) {
+      const file = hiddenFiles.find(f => f.id === fileId);
+      if (!file) continue;
+      const ok = await downloadFileToDevice(file);
+      if (ok) {
+        await deleteFile(file.id);
+        moved++;
+      }
+    }
+    setIsMovingFiles(false);
+    setMovingToDevice(false);
+    setSelectedForMove([]);
+    if (moved > 0) {
+      toast({ title: `${moved} file${moved > 1 ? 's' : ''} saved to device and removed from vault`, type: 'success' });
+    } else {
+      toast({ title: 'No files were moved', description: 'The download was cancelled or failed.', type: 'error' });
+    }
+  };
+
   const convertHeicToJpeg = async (file: File): Promise<File> => {
     try {
       const mod = await import('heic2any');
@@ -190,7 +269,8 @@ export const HiddenVault: React.FC = () => {
       if (!(raw instanceof Blob)) return file; // unexpected output, keep original
 
       const jpegName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
-      return new File([raw], jpegName, { type: 'image/jpeg' });
+      const FC = (globalThis as any).File as new (p: BlobPart[], n: string, o?: FilePropertyBag) => File;
+      return new FC([raw], jpegName, { type: 'image/jpeg' });
     } catch {
       // Any failure → keep the original HEIC file (Safari can show it natively)
       return file;
@@ -243,10 +323,14 @@ export const HiddenVault: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
 
     if (added > 0) {
-      toast({
-        title: `${added === 1 ? '1 file' : `${added} files`} added to Secret Vault`,
-        type: 'success'
-      });
+      toast({ title: `${added === 1 ? '1 file' : `${added} files`} added to Secret Vault`, type: 'success' });
+      setTimeout(() => {
+        toast({
+          title: 'Remember to delete the originals',
+          description: 'Delete the original file(s) from your device gallery or Files app so they only exist here.',
+          type: 'info'
+        });
+      }, 1800);
     }
   };
 
@@ -511,18 +595,28 @@ export const HiddenVault: React.FC = () => {
 
               <input ref={fileInputRef} type="file" accept="*/*" multiple onChange={handleAddFile} className="hidden" />
 
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isAdding}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-lg glow-purple flex items-center gap-1.5 self-start sm:self-auto"
-              >
-                {isAdding ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                <span>{isConverting ? 'Converting HEIC...' : isAdding ? 'Saving...' : 'Add File'}</span>
-              </button>
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                <button
+                  onClick={() => { setMovingToDevice(v => !v); setSelectedForMove([]); }}
+                  disabled={isAdding || hiddenFiles.length === 0}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 text-white text-xs font-bold transition-all border border-white/10 flex items-center gap-1.5"
+                >
+                  <Smartphone className="w-4 h-4 text-purple-400" />
+                  <span>{movingToDevice ? 'Cancel Move' : 'Unhide to Device'}</span>
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isAdding || movingToDevice}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-lg glow-purple flex items-center gap-1.5"
+                >
+                  {isAdding ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  <span>{isConverting ? 'Converting...' : isAdding ? 'Saving...' : 'Add File'}</span>
+                </button>
+              </div>
 
               {/* HEIC Converting overlay */}
               {isConverting && (
@@ -560,6 +654,12 @@ export const HiddenVault: React.FC = () => {
                 </h3>
               </div>
 
+              {movingToDevice && hiddenFiles.length > 0 && (
+                <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300 flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 flex-shrink-0" />
+                  Tap files to select them, then click <strong className="text-white">Move to Device</strong> to save them to your device and remove from vault.
+                </div>
+              )}
               {hiddenFiles.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {hiddenFiles.map((file) => (
@@ -569,7 +669,10 @@ export const HiddenVault: React.FC = () => {
                       getFileIcon={getFileIcon}
                       getFileColor={getFileColor}
                       onDelete={() => setConfirmDeleteFile(file)}
-                      onView={() => openPreview(file)}
+                      onView={() => movingToDevice ? toggleSelectForMove(file.id) : openPreview(file)}
+                      movingToDevice={movingToDevice}
+                      isSelected={selectedForMove.includes(file.id)}
+                      onSelect={() => toggleSelectForMove(file.id)}
                     />
                   ))}
                 </div>
@@ -601,6 +704,43 @@ export const HiddenVault: React.FC = () => {
                   Your secret files are stored only on your device. Nobody else — not even the app — can see them without your PIN.
                 </p>
               </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MOVE TO DEVICE — BOTTOM ACTION BAR ── */}
+      <AnimatePresence>
+        {movingToDevice && (
+          <motion.div
+            key="move-bar"
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="fixed bottom-20 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none"
+          >
+            <div className="pointer-events-auto flex items-center gap-3 px-5 py-3.5 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl backdrop-blur-md w-full max-w-sm">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white">
+                  {selectedForMove.length === 0
+                    ? 'Select files to move'
+                    : `${selectedForMove.length} file${selectedForMove.length > 1 ? 's' : ''} selected`}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Files will be saved to device and removed from vault</p>
+              </div>
+              <button
+                onClick={handleMoveToDevice}
+                disabled={selectedForMove.length === 0 || isMovingFiles}
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+              >
+                {isMovingFiles ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{isMovingFiles ? 'Moving...' : 'Move to Device'}</span>
+              </button>
             </div>
           </motion.div>
         )}
@@ -722,16 +862,44 @@ export const HiddenVault: React.FC = () => {
                     const isPdf = ft === 'application/pdf' || fn.endsWith('.pdf');
                     return (
                       <>
-                        {isImg && !isVid && (
-                          <div className="overflow-auto flex items-center justify-center w-full h-full p-4">
-                            <img
-                              src={previewUrl}
-                              alt={previewingFile.name}
-                              className="rounded-xl shadow-2xl transition-transform duration-200 object-contain"
-                              style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', maxWidth: zoomLevel <= 1 ? '100%' : 'none', maxHeight: zoomLevel <= 1 ? '100%' : 'none' }}
-                            />
-                          </div>
-                        )}
+                        {isImg && !isVid && (() => {
+                          const isHeic = /\.(heic|heif)$/i.test(fn) || ft === 'image/heic' || ft === 'image/heif';
+                          if (isHeic) {
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-5 p-8 text-center h-full">
+                                <div className="w-20 h-20 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center">
+                                  <Image className="w-10 h-10 text-purple-400" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-bold text-white truncate max-w-xs">{previewingFile.name}</p>
+                                  <p className="text-xs text-gray-400 mt-2 max-w-[260px] leading-relaxed">
+                                    HEIC is Apple's photo format. Most browsers can't display it directly — download it and open with your device's Photos app.
+                                  </p>
+                                </div>
+                                {previewUrl && (
+                                  <a
+                                    href={previewUrl}
+                                    download={previewingFile.name}
+                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    Download to View
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="overflow-auto flex items-center justify-center w-full h-full p-4">
+                              <img
+                                src={previewUrl}
+                                alt={previewingFile.name}
+                                className="rounded-xl shadow-2xl transition-transform duration-200 object-contain"
+                                style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', maxWidth: zoomLevel <= 1 ? '100%' : 'none', maxHeight: zoomLevel <= 1 ? '100%' : 'none' }}
+                              />
+                            </div>
+                          );
+                        })()}
                         {isVid && (
                           <div className="w-full h-full flex items-center justify-center p-4">
                             <video
@@ -891,14 +1059,20 @@ interface FileCardProps {
   getFileColor: (type: string) => string;
   onDelete: () => void;
   onView: () => void;
+  movingToDevice?: boolean;
+  isSelected?: boolean;
+  onSelect?: () => void;
 }
 
-const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, onDelete, onView }) => {
+const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, onDelete, onView, movingToDevice, isSelected, onSelect }) => {
   const [thumbUrl, setThumbUrl] = React.useState<string | null>(null);
   const thumbUrlRef = React.useRef<string | null>(null);
 
+  const isHeicFile = /\.(heic|heif)$/i.test(file.name) || file.type === 'image/heic' || file.type === 'image/heif';
+
   React.useEffect(() => {
-    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|heic|heif)$/i.test(file.name);
+    // Don't try to render HEIC thumbnails — browsers show blank
+    const isImage = !isHeicFile && (file.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
     if (!isImage) return;
     let cancelled = false;
     const load = async () => {
@@ -924,18 +1098,41 @@ const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, on
 
   return (
     <div
-      onClick={onView}
-      className="p-4 rounded-2xl border flex flex-col justify-between group relative overflow-hidden cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+      onClick={movingToDevice ? onSelect : onView}
+      className={`p-4 rounded-2xl border flex flex-col justify-between group relative overflow-hidden cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${
+        movingToDevice && isSelected ? 'ring-2 ring-purple-500 border-purple-500/60' : ''
+      }`}
       style={{
-        background: 'linear-gradient(135deg, rgba(88,28,135,0.12) 0%, rgba(13,18,45,0.85) 100%)',
-        borderColor: 'rgba(139,92,246,0.2)',
+        background: movingToDevice && isSelected
+          ? 'linear-gradient(135deg, rgba(88,28,135,0.30) 0%, rgba(13,18,45,0.90) 100%)'
+          : 'linear-gradient(135deg, rgba(88,28,135,0.12) 0%, rgba(13,18,45,0.85) 100%)',
+        borderColor: movingToDevice && isSelected ? 'rgba(139,92,246,0.6)' : 'rgba(139,92,246,0.2)',
         boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
       }}
     >
+      {/* Move-mode selection indicator */}
+      {movingToDevice && (
+        <div className={`absolute top-2.5 right-2.5 z-10 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+          isSelected ? 'bg-purple-600 border-purple-500' : 'bg-black/40 border-white/30'
+        }`}>
+          {isSelected && (
+            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </div>
+      )}
+
       {thumbUrl ? (
         <div className="mb-3 rounded-xl overflow-hidden h-28 bg-black/30 relative">
           <img src={thumbUrl} alt={file.name} className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+        </div>
+      ) : isHeicFile ? (
+        <div className="mb-3 rounded-xl h-20 flex flex-col items-center justify-center relative overflow-hidden gap-1.5"
+          style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(99,102,241,0.06))' }}>
+          <Image className="w-7 h-7 text-purple-400" />
+          <span className="text-[9px] font-bold text-purple-400/70 uppercase tracking-widest">HEIC</span>
         </div>
       ) : isVideo ? (
         <div className="mb-3 rounded-xl h-20 flex items-center justify-center relative overflow-hidden"
@@ -958,13 +1155,15 @@ const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, on
           {getFileIcon(file.type)}
         </div>
 
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-white/5 transition-all"
-          title="Delete File"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        {!movingToDevice && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-white/5 transition-all"
+            title="Delete File"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       <div className="mt-3">
@@ -978,7 +1177,9 @@ const FileCard: React.FC<FileCardProps> = ({ file, getFileIcon, getFileColor, on
               : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
           </span>
         </div>
-        <p className="text-[10px] text-gray-600 mt-1 group-hover:text-purple-400 transition-colors">Tap to open →</p>
+        <p className="text-[10px] text-gray-600 mt-1 group-hover:text-purple-400 transition-colors">
+          {movingToDevice ? (isSelected ? '✓ Selected' : 'Tap to select') : 'Tap to open →'}
+        </p>
       </div>
     </div>
   );
