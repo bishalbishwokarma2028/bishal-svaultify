@@ -796,6 +796,32 @@ export const Settings: React.FC = () => {
           {/* BACKUP & RESTORE */}
           {activeSection === 'backup' && (
             <div className="space-y-4">
+
+              {/* How it works — top explainer */}
+              <div className="glass-panel-premium rounded-3xl p-5 border border-blue-500/20 bg-blue-500/[0.03] space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-blue-500/15 text-blue-400 flex-shrink-0">
+                    <HelpCircle className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white">How Vaultify stores your data</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.07] space-y-1">
+                    <p className="font-bold text-blue-300 flex items-center gap-1.5"><Smartphone className="w-3.5 h-3.5" /> On this device</p>
+                    <p className="text-gray-400 leading-relaxed">The actual file contents (photos, PDFs, documents) are stored in your browser's private storage on this device only. They never leave your device automatically.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.07] space-y-1">
+                    <p className="font-bold text-violet-300 flex items-center gap-1.5"><Monitor className="w-3.5 h-3.5" /> In the cloud</p>
+                    <p className="text-gray-400 leading-relaxed">File names, categories, passwords, notes, and reminders are always synced to the cloud so you can see them on any device using the same email.</p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-500/[0.07] border border-amber-500/20">
+                  <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                    <strong className="text-amber-300">Important:</strong> Files under 20 MB are also backed up to the cloud automatically and can sync to other devices. Files larger than 20 MB exist only on this device — use the Backup feature below to move them to a new device.
+                  </p>
+                </div>
+              </div>
+
               {/* Sync Now */}
               <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-4">
                 <div className="flex items-center gap-3">
@@ -804,8 +830,16 @@ export const Settings: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Sync from Cloud</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">Pull the latest data from the server to this device.</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Pull the latest data from all your devices right now.</p>
                   </div>
+                </div>
+                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-2">
+                  <p className="text-[11px] font-semibold text-gray-300">When to use Sync Now:</p>
+                  <ul className="text-[11px] text-gray-400 space-y-1.5">
+                    <li className="flex items-start gap-1.5"><span className="text-blue-400 mt-0.5">•</span> You added files on another device and want to see them here immediately</li>
+                    <li className="flex items-start gap-1.5"><span className="text-blue-400 mt-0.5">•</span> You deleted something on one device and want this device to reflect that</li>
+                    <li className="flex items-start gap-1.5"><span className="text-blue-400 mt-0.5">•</span> Sync also runs automatically every time you open or return to the app</li>
+                  </ul>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   {[
@@ -833,7 +867,7 @@ export const Settings: React.FC = () => {
                 </button>
               </div>
 
-              {/* Backup */}
+              {/* Backup — step-by-step */}
               <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
@@ -841,18 +875,51 @@ export const Settings: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Export Backup</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">Download all your vault data as a single backup file.</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Download everything in your vault as a single file you can keep safely.</p>
                   </div>
                 </div>
-                <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15 space-y-1.5">
-                  <p className="text-xs font-semibold text-emerald-300">What's included in the backup:</p>
-                  <ul className="text-[11px] text-gray-400 space-y-1 list-disc list-inside">
-                    <li>All files (including document content up to 20 MB each)</li>
-                    <li>Folders, passwords, notes, and reminders</li>
-                    <li>File organisation and categories</li>
-                  </ul>
+
+                {/* What's in a backup */}
+                <div className="p-3.5 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/15 space-y-2">
+                  <p className="text-[11px] font-bold text-emerald-300">What gets saved in your backup file:</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { icon: '📄', text: 'All uploaded files (actual content, up to 20 MB per file)' },
+                      { icon: '📁', text: 'Folders and file organisation' },
+                      { icon: '🔑', text: 'Saved passwords' },
+                      { icon: '📝', text: 'Notes' },
+                      { icon: '⏰', text: 'Reminders and expiry dates' },
+                      { icon: '🏷️', text: 'Categories and tags' },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-start gap-1.5 text-[11px] text-gray-400">
+                        <span className="text-sm leading-tight">{item.icon}</span>
+                        <span className="leading-tight">{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-[11px] text-gray-500">The backup is a <strong className="text-gray-400">.json</strong> file you can import on any device using the same account. Keep it somewhere safe.</p>
+
+                {/* Step-by-step how to backup */}
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-gray-300">How to back up your vault:</p>
+                  {[
+                    { step: '1', text: 'Tap "Download Backup" below on your current device.' },
+                    { step: '2', text: 'A file named vaultify-backup-[date].json will be saved to your Downloads folder.' },
+                    { step: '3', text: 'Move this file somewhere safe — Google Drive, iCloud, email yourself, or a USB drive.' },
+                  ].map(s => (
+                    <div key={s.step} className="flex items-start gap-3 p-2.5 rounded-lg bg-white/[0.02]">
+                      <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">{s.step}</span>
+                      <p className="text-[11px] text-gray-400 leading-relaxed">{s.text}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    <strong className="text-gray-400">Tip:</strong> Make a new backup whenever you add important files. The backup file is just a text file (.json) — it is safe and readable only by Vaultify's restore feature.
+                  </p>
+                </div>
+
                 <button
                   onClick={handleBackup}
                   disabled={isBackingUp}
@@ -866,22 +933,46 @@ export const Settings: React.FC = () => {
                 </button>
               </div>
 
-              {/* Restore */}
+              {/* Restore — step-by-step */}
               <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
-                    <FolderOpen className="w-5 h-5" />
+                    <ArchiveRestore className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Restore from Backup</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">Import a backup file to restore your vault on this device.</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Transfer your entire vault to a new phone or browser from a backup file.</p>
                   </div>
                 </div>
-                <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15">
-                  <p className="text-[11px] text-amber-300/80">
-                    <strong>Safe to run multiple times.</strong> Restoring will only add items that aren't already on this device — it will never overwrite or delete existing data.
-                  </p>
+
+                {/* Step-by-step how to restore */}
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-gray-300">How to restore on a new device:</p>
+                  {[
+                    { step: '1', color: 'bg-indigo-500/20 text-indigo-400', text: 'On your old device — go to Settings → Backup & Restore and tap "Download Backup" to get the latest backup file.' },
+                    { step: '2', color: 'bg-indigo-500/20 text-indigo-400', text: 'Transfer the backup file to your new device. You can use Google Drive, iCloud, WhatsApp, email, or a USB cable.' },
+                    { step: '3', color: 'bg-indigo-500/20 text-indigo-400', text: 'On your new device — open Vaultify, log in with the same email address.' },
+                    { step: '4', color: 'bg-indigo-500/20 text-indigo-400', text: 'Go to Settings → Backup & Restore, scroll down and tap "Select Backup File". Choose the backup file you transferred.' },
+                    { step: '5', color: 'bg-emerald-500/20 text-emerald-400', text: 'Done! All your files, passwords, notes, and folders will be restored. Opening any file should now work normally.' },
+                  ].map(s => (
+                    <div key={s.step} className="flex items-start gap-3 p-2.5 rounded-lg bg-white/[0.02]">
+                      <span className={`w-5 h-5 rounded-full ${s.color} text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5`}>{s.step}</span>
+                      <p className="text-[11px] text-gray-400 leading-relaxed">{s.text}</p>
+                    </div>
+                  ))}
                 </div>
+
+                {/* Safety notice */}
+                <div className="p-3.5 rounded-xl bg-amber-500/[0.06] border border-amber-500/15 space-y-1.5">
+                  <p className="text-[11px] font-bold text-amber-300">Good to know before restoring:</p>
+                  <ul className="text-[11px] text-gray-400 space-y-1.5">
+                    <li className="flex items-start gap-1.5"><span className="text-amber-400 mt-0.5">✓</span> <span><strong className="text-gray-300">Completely safe</strong> — restore only adds items missing on this device. It never deletes or overwrites anything already here.</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-amber-400 mt-0.5">✓</span> <span><strong className="text-gray-300">Can run multiple times</strong> — if a restore is interrupted, just run it again. Duplicate items will not be created.</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-amber-400 mt-0.5">✓</span> <span><strong className="text-gray-300">Files open immediately</strong> — after restoring, tap any file in the vault to open or preview it right away.</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-amber-400 mt-0.5">✓</span> <span><strong className="text-gray-300">Same account required</strong> — you must be logged in with the same email address the backup was made from.</span></li>
+                  </ul>
+                </div>
+
                 <input
                   ref={backupInputRef}
                   type="file"
@@ -907,12 +998,42 @@ export const Settings: React.FC = () => {
                   className="w-full py-3 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isRestoring ? (
-                    <><div className="w-4 h-4 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" /><span>Restoring...</span></>
+                    <><div className="w-4 h-4 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" /><span>Restoring... please wait</span></>
                   ) : (
-                    <><FolderOpen className="w-4 h-4" /><span>Select Backup File</span></>
+                    <><ArchiveRestore className="w-4 h-4" /><span>Select Backup File to Restore</span></>
                   )}
                 </button>
+                <p className="text-[10px] text-gray-600 text-center">Select the .json file you downloaded using "Download Backup" above</p>
               </div>
+
+              {/* FAQ */}
+              <div className="glass-panel-premium rounded-3xl p-5 border border-white/10 space-y-3">
+                <p className="text-xs font-bold text-white">Frequently asked questions</p>
+                {[
+                  {
+                    q: 'My files show "No preview available" after restoring — is that normal?',
+                    a: 'No — after a successful restore, all files should open immediately. If a file still shows no preview, try tapping "Sync Now" above and then open the file again.',
+                  },
+                  {
+                    q: 'Do I need to be connected to the internet to restore?',
+                    a: 'You need an internet connection to log in and to sync metadata. The actual file contents come from the backup file, so they restore even with a slow connection.',
+                  },
+                  {
+                    q: 'What happens if I restore on a device that already has some files?',
+                    a: 'Only missing items are added. Files already present on this device are never duplicated or overwritten.',
+                  },
+                  {
+                    q: 'Will deleting a file on one device delete it on my other device too?',
+                    a: 'Yes — deletions sync automatically. When you return to your other device (or tap Sync Now), the deleted file will disappear there too.',
+                  },
+                ].map((faq, i) => (
+                  <div key={i} className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-1">
+                    <p className="text-[11px] font-semibold text-gray-200">Q: {faq.q}</p>
+                    <p className="text-[11px] text-gray-500 leading-relaxed">A: {faq.a}</p>
+                  </div>
+                ))}
+              </div>
+
             </div>
           )}
 

@@ -179,7 +179,20 @@ export const App: React.FC = () => {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Re-sync whenever the user returns to this tab/app so that deletions
+    // or additions from another device are reflected within seconds.
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const { isAuthenticated: authed } = useVaultStore.getState();
+        if (authed) syncFromSupabase();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   useEffect(() => {

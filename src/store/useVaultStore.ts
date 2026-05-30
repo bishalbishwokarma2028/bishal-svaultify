@@ -359,15 +359,22 @@ export const useVaultStore = create<VaultStore>()(
                 expiry_date: fileData.expiryDate || null, user_id: userId,
               }]).select().single();
               if (!error && data) {
-                // Index IDB content under the canonical Supabase UUID as well
+                // Mirror IDB content under the canonical Supabase UUID so both
+                // keys work (sync looks up local://localId from the DB url field,
+                // fallback checks local://data.id — both now have content).
                 if (fileContent) {
                   getFileContent(localId).then(blob => {
                     if (blob) storeFileContent(data.id, blob).catch(() => {});
                   }).catch(() => {});
                 }
+                // IMPORTANT: keep url as local://localId (NOT local://data.id).
+                // The localOnlyFiles filter in syncFromSupabase detects "never-synced"
+                // files by checking getFileIdFromUrl(url) === f.id. Changing url to
+                // local://data.id would make synced files look "never-synced" and
+                // prevent remote deletions from propagating to this device.
                 set((state) => ({
                   files: state.files.map(f => f.id === localId
-                    ? { ...f, id: data.id, url: storageUrl || `${LOCAL_FILE_PREFIX}${data.id}` }
+                    ? { ...f, id: data.id, ...(storageUrl ? { url: storageUrl } : {}) }
                     : f
                   )
                 }));
