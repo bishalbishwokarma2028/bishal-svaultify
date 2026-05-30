@@ -43,6 +43,7 @@ import {
   getAdminSession,
   setAdminSession,
   clearAdminSession,
+  pushAdminSettingsToCloud,
   PremiumRequest,
   RegisteredUser,
 } from '../lib/premiumRequests';
@@ -122,6 +123,29 @@ export const Admin: React.FC = () => {
     setPlanAccess(updated);
     try { localStorage.setItem('vaultify-plan-access', JSON.stringify(updated)); } catch { /* ignore */ }
     flash(`${sectionId} is now ${next === 'premium' ? 'Premium Only' : 'Free for All'}`);
+    pushAllToCloud({ planAccessOverride: updated });
+  };
+
+  const pushAllToCloud = (overrides: {
+    approvedEmailsOverride?: string[];
+    priceOverride?: number;
+    planAccessOverride?: Record<string, 'free' | 'premium'>;
+    freeLimitOverride?: number;
+    announcementOverride?: string;
+  } = {}) => {
+    const emails = overrides.approvedEmailsOverride ?? getApprovedEmails();
+    const price = overrides.priceOverride ?? getSubscriptionPrice();
+    const access = overrides.planAccessOverride ?? JSON.parse(localStorage.getItem('vaultify-plan-access') || '{}');
+    const limitGb = overrides.freeLimitOverride ?? Number(localStorage.getItem('vaultify-admin-free-limit-gb') || FREE_LIMIT_GB);
+    const ann = overrides.announcementOverride ?? (localStorage.getItem('vaultify-admin-announcement') || '');
+    pushAdminSettingsToCloud({
+      approvedEmails: emails,
+      subscriptionPrice: price,
+      freeStorageLimitGB: limitGb,
+      planAccess: access,
+      announcement: ann,
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const loadData = () => {
@@ -170,6 +194,7 @@ export const Admin: React.FC = () => {
     setPriceSaved(true);
     setTimeout(() => setPriceSaved(false), 2000);
     flash(`Subscription price updated to Rs.${p}`);
+    pushAllToCloud({ priceOverride: p });
   };
 
   const handleAdminSendReply = () => {
@@ -204,6 +229,7 @@ export const Admin: React.FC = () => {
     addApprovedEmail(req.email);
     loadData();
     flash(`Premium approved for ${req.email}`);
+    pushAllToCloud();
   };
 
   const handleReject = (req: PremiumRequest) => {
@@ -211,6 +237,7 @@ export const Admin: React.FC = () => {
     removeApprovedEmail(req.email);
     loadData();
     flash(`Request rejected for ${req.email}`);
+    pushAllToCloud();
   };
 
   const handleManualAdd = () => {
@@ -220,12 +247,14 @@ export const Admin: React.FC = () => {
     setAddEmailInput('');
     loadData();
     flash(`Premium manually granted to ${e}`);
+    pushAllToCloud();
   };
 
   const handleManualRemove = (e: string) => {
     removeApprovedEmail(e);
     loadData();
     flash(`Premium revoked from ${e}`);
+    pushAllToCloud();
   };
 
   const handleTogglePremium = (userEmail: string, currentlyPremium: boolean) => {
@@ -237,6 +266,7 @@ export const Admin: React.FC = () => {
       flash(`Premium granted to ${userEmail}`);
     }
     loadData();
+    pushAllToCloud();
   };
 
   const handleSaveAnnouncement = () => {
@@ -245,6 +275,7 @@ export const Admin: React.FC = () => {
     setAnnouncementSaved(true);
     setTimeout(() => setAnnouncementSaved(false), 2000);
     flash('Announcement saved and will show to all users.');
+    pushAllToCloud({ announcementOverride: announcement });
   };
 
   const handleSaveSettings = () => {
@@ -252,6 +283,7 @@ export const Admin: React.FC = () => {
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 2000);
     flash(`Settings saved. Free storage set to ${freeLimit} GB.`);
+    pushAllToCloud({ freeLimitOverride: freeLimit });
   };
 
   const flash = (msg: string) => {

@@ -14,9 +14,16 @@ import {
 } from '../types';
 import { supabase } from '../lib/supabase';
 import { idbStorage, storeFileContent, deleteFileContent, LOCAL_FILE_PREFIX, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
-import { saveRequest, isEmailApproved } from '../lib/premiumRequests';
+import { saveRequest, isEmailApproved, fetchAdminSettingsFromCloud } from '../lib/premiumRequests';
 
-export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB
+export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB default
+export const getFreeStorageLimit = (): number => {
+  try {
+    const gb = Number(localStorage.getItem('vaultify-admin-free-limit-gb'));
+    if (gb > 0) return gb * 1024 * 1024 * 1024;
+  } catch { /* ignore */ }
+  return FREE_STORAGE_LIMIT;
+};
 
 interface VaultStore {
   user: UserProfile | null;
@@ -262,7 +269,7 @@ export const useVaultStore = create<VaultStore>()(
         const { isPremium, files } = get();
         if (!isPremium) {
           const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
-          if (usedBytes + fileData.size > FREE_STORAGE_LIMIT) {
+          if (usedBytes + fileData.size > getFreeStorageLimit()) {
             throw new Error('STORAGE_LIMIT_EXCEEDED');
           }
         }
@@ -270,14 +277,14 @@ export const useVaultStore = create<VaultStore>()(
         const now = new Date().toISOString();
         const isBlob = fileContent instanceof Blob;
 
-        const fileUrl = fileContent ? `${LOCAL_FILE_PREFIX}${localId}` : (fileData.url || '');
+        const localFileUrl = fileContent ? `${LOCAL_FILE_PREFIX}${localId}` : (fileData.url || '');
 
         const newFile: FileItem = {
           id: localId,
           name: fileData.name,
           size: fileData.size,
           type: fileData.type,
-          url: fileUrl,
+          url: localFileUrl,
           folderId: fileData.folderId,
           category: fileData.category,
           tags: fileData.tags,
@@ -294,39 +301,73 @@ export const useVaultStore = create<VaultStore>()(
           user: state.user ? { ...state.user, usedStorage: state.user.usedStorage + newFile.size } : null
         }));
 
-        // Store file content async — Blobs store natively (fast), strings store as-is
+        // Store file content in local IDB (for offline access on this device)
         if (fileContent) {
           storeFileContent(localId, fileContent).catch(() => {});
         }
 
         const userId = get().user?.id;
         if (userId && supabase) {
+          // ── Try to upload Blob to Supabase Storage for cross-device access ──
+          let storageUrl: string | null = null;
+          if (isBlob) {
+            try {
+              await supabase.storage.createBucket('vault-files', { public: true }).catch(() => {});
+              const ext = fileData.name.includes('.') ? fileData.name.split('.').pop()!.toLowerCase() : 'bin';
+              const storagePath = `${userId}/${localId}.${ext}`;
+              const { error: uploadError } = await supabase.storage
+                .from('vault-files')
+                .upload(storagePath, fileContent as Blob, {
+                  contentType: fileData.type || 'application/octet-stream',
+                  upsert: true,
+                });
+              if (!uploadError) {
+                storageUrl = supabase.storage.from('vault-files').getPublicUrl(storagePath).data.publicUrl;
+                // Update local file's URL immediately so preview works from storage URL
+                set((state) => ({
+                  files: state.files.map(f => f.id === localId ? { ...f, url: storageUrl! } : f)
+                }));
+              }
+            } catch { /* fallback: keep local IDB URL */ }
+          }
+
+          // ── Base64 fallback for small blobs when Storage bucket isn't set up ──
+          // Files ≤ 5 MB are converted to data URLs and stored in the content
+          // column so other devices can sync them via the normal DB sync path.
+          let dbContent: string | null = null;
+          if (!isBlob && typeof fileContent === 'string') {
+            dbContent = fileContent;
+          } else if (isBlob && !storageUrl && (fileContent as Blob).size <= 5 * 1024 * 1024) {
+            try {
+              dbContent = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(fileContent as Blob);
+              });
+            } catch { /* fallback to local-only */ }
+          }
+
           try {
+            const dbUrl = storageUrl || localFileUrl;
             const { data, error } = await supabase.from('files').insert([{
               name: fileData.name, size: fileData.size, type: fileData.type,
-              url: fileUrl,
-              content: isBlob ? null : (typeof fileContent === 'string' ? fileContent : null),
+              url: dbUrl,
+              content: dbContent,
               folder_id: fileData.folderId, category: fileData.category,
               tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
               expiry_date: fileData.expiryDate || null, user_id: userId,
             }]).select().single();
             if (!error && data) {
-              if (fileContent) {
-                // Keep content under localId — do NOT rename the IDB entry.
-                // Moving content to data.id and deleting localId is a race condition:
-                // deleteFileContent runs before storeFileContent finishes for large files,
-                // causing "couldn't load" on open. URL stays as local://localId.
-                set((state) => ({
-                  files: state.files.map(f => f.id === localId ? { ...f, id: data.id } : f)
-                }));
-              } else {
-                set((state) => ({
-                  files: state.files.map(f => f.id === localId
-                    ? { ...f, id: data.id, url: data.url || fileUrl }
-                    : f
-                  )
-                }));
-              }
+              // Replace local placeholder ID with the real Supabase UUID
+              // If content was stored in DB (small file), the URL stays as local://
+              // for this device (fast IDB access) and syncs via content on other devices.
+              set((state) => ({
+                files: state.files.map(f => f.id === localId
+                  ? { ...f, id: data.id, ...(storageUrl ? { url: storageUrl } : {}) }
+                  : f
+                )
+              }));
             }
           } catch { /* keep local */ }
         }
@@ -358,6 +399,17 @@ export const useVaultStore = create<VaultStore>()(
           user: state.user && file ? { ...state.user, usedStorage: Math.max(0, state.user.usedStorage - file.size) } : state.user
         }));
         deleteFileContent(id).catch(() => {});
+
+        // Delete from Supabase Storage if the file was uploaded there
+        if (file && supabase && file.url && !isLocalFileUrl(file.url)) {
+          try {
+            const urlObj = new URL(file.url);
+            const match = urlObj.pathname.match(/\/storage\/v1\/object\/public\/vault-files\/(.+)$/);
+            if (match) {
+              await supabase.storage.from('vault-files').remove([decodeURIComponent(match[1])]).catch(() => {});
+            }
+          } catch { /* ignore */ }
+        }
 
         const userId = get().user?.id;
         if (userId && supabase) {
@@ -813,6 +865,42 @@ export const useVaultStore = create<VaultStore>()(
             emergencyContacts: [...sbEmergencyContacts, ...localOnlyContacts],
             user: s.user ? { ...s.user, usedStorage: totalUsed } : null
           }));
+
+          // ── Fetch admin cloud settings and apply them ──────────────────────
+          // This syncs subscription price, premium approvals, plan access, and
+          // free storage limit from the admin's last save to every device.
+          try {
+            const cloudCfg = await fetchAdminSettingsFromCloud();
+            if (cloudCfg) {
+              if (cloudCfg.subscriptionPrice > 0) {
+                localStorage.setItem('vaultify-subscription-price', String(cloudCfg.subscriptionPrice));
+                window.dispatchEvent(new StorageEvent('storage', {
+                  key: 'vaultify-subscription-price',
+                  newValue: String(cloudCfg.subscriptionPrice)
+                }));
+              }
+              if (Array.isArray(cloudCfg.approvedEmails)) {
+                localStorage.setItem('vaultify-premium-approved', JSON.stringify(cloudCfg.approvedEmails));
+              }
+              if (cloudCfg.planAccess && typeof cloudCfg.planAccess === 'object') {
+                localStorage.setItem('vaultify-plan-access', JSON.stringify(cloudCfg.planAccess));
+              }
+              if (cloudCfg.freeStorageLimitGB > 0) {
+                localStorage.setItem('vaultify-admin-free-limit-gb', String(cloudCfg.freeStorageLimitGB));
+              }
+              if (typeof cloudCfg.announcement === 'string') {
+                localStorage.setItem('vaultify-admin-announcement', cloudCfg.announcement);
+              }
+              // Grant premium if this user's email is in the approved list
+              const user = get().user;
+              if (user && Array.isArray(cloudCfg.approvedEmails)) {
+                const approvedSet = new Set(cloudCfg.approvedEmails.map((e: string) => e.toLowerCase().trim()));
+                if (approvedSet.has(user.email.toLowerCase().trim())) {
+                  set({ isPremium: true, paymentStatus: 'approved' });
+                }
+              }
+            }
+          } catch { /* ignore — settings will use local defaults */ }
 
           return true;
         } catch (err) {

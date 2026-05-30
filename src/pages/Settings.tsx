@@ -36,6 +36,7 @@ import {
   getSubscriptionPrice,
   SupportMessage,
 } from '../lib/supportChat';
+import { fetchAdminSettingsFromCloud } from '../lib/premiumRequests';
 
 export const Settings: React.FC = () => {
   const { user, files, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment } = useVaultStore();
@@ -127,6 +128,17 @@ export const Settings: React.FC = () => {
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Fetch latest admin settings from cloud on mount so subscription price,
+  // free tier limit, etc. reflect whatever the admin has set.
+  useEffect(() => {
+    fetchAdminSettingsFromCloud().then(cfg => {
+      if (cfg?.subscriptionPrice && cfg.subscriptionPrice > 0) {
+        localStorage.setItem('vaultify-subscription-price', String(cfg.subscriptionPrice));
+        setSubscriptionPriceState(cfg.subscriptionPrice);
+      }
+    }).catch(() => {});
   }, []);
 
   const handleSendChat = () => {

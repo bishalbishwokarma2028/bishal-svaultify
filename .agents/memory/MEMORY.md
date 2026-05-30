@@ -1,1 +1,3 @@
-- [Vaultify store design](vaultify-store.md) — per-user data isolation via `dataOwnerId`, file URL must be `local://ID` in Supabase too, syncFromSupabase merges not replaces
+- [Supabase Storage bucket creation blocked](supabase-bucket-rls.md) — anon and authed user JWTs cannot create buckets; only service_role can. Use service_role key or Supabase dashboard.
+- [Admin config cross-device sync](admin-config-sync.md) — uses temp Supabase client (persistSession:false) to sign in as admin and read/write user_metadata; doesn't disrupt user session.
+- [File cross-device sync](file-cross-device.md) — files ≤5MB stored as base64 in DB content column; larger files need vault-files Storage bucket to be created manually.
