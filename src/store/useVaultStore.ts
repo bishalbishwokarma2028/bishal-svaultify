@@ -805,8 +805,8 @@ export const useVaultStore = create<VaultStore>()(
               resolvedUrl = f.url;
             } else {
               // url is 'local://<originalLocalId>' with no content column.
-              // Check if this device already has the blob (Device A scenario where
-              // the large file was stored under the original local placeholder ID).
+              // Check if this device already has the blob.
+              // First try the original local placeholder ID (Device A upload path).
               const localId = f.url ? f.url.replace('local://', '') : null;
               if (localId) {
                 const localBlob = await getFileContent(localId);
@@ -815,8 +815,17 @@ export const useVaultStore = create<VaultStore>()(
                   await storeFileContent(f.id, localBlob).catch(() => {});
                   resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
                 }
-                // else: file was only on the original device → resolvedUrl stays ''
               }
+              // Fallback: check under the canonical Supabase UUID itself.
+              // This covers the case where a backup restore already wrote content
+              // to IDB under f.id BEFORE sync ran.
+              if (!resolvedUrl) {
+                const canonicalBlob = await getFileContent(f.id);
+                if (canonicalBlob) {
+                  resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
+                }
+              }
+              // else: truly not available on this device
             }
 
             return {
@@ -1008,17 +1017,19 @@ export const useVaultStore = create<VaultStore>()(
           }
 
           // 2. Restore files
-          const existingFileIds = new Set(get().files.map((f) => f.id));
+          // Track IDs that already exist so we know whether to add vs update
+          const existingFileMap = new Map(get().files.map((f) => [f.id, f]));
           const newFiles: FileItem[] = [];
-          for (const fileEntry of (backup.files || []) as (FileItem & { blobContent?: string })[]) {
-            if (existingFileIds.has(fileEntry.id)) continue;
+          // IDs whose URL we need to patch in the existing state array
+          const urlPatches: Map<string, string> = new Map();
 
+          for (const fileEntry of (backup.files || []) as (FileItem & { blobContent?: string })[]) {
             const { blobContent, ...fileData } = fileEntry;
             let resolvedUrl = fileData.url || '';
             let dbContent: string | null = null;
 
             if (blobContent && typeof blobContent === 'string' && blobContent.startsWith('data:')) {
-              // Store blob in local IDB
+              // Write blob content to local IDB under the canonical Supabase UUID
               await storeFileContent(fileData.id, blobContent).catch(() => {});
               resolvedUrl = `${LOCAL_FILE_PREFIX}${fileData.id}`;
               dbContent = blobContent;
@@ -1026,6 +1037,25 @@ export const useVaultStore = create<VaultStore>()(
               resolvedUrl = blobContent;
             }
 
+            const existingFile = existingFileMap.get(fileData.id);
+            if (existingFile) {
+              // File already in state (sync may have added it with url:'').
+              // If we have a better URL now, patch it in state.
+              const currentUrlOk = existingFile.url && existingFile.url !== '';
+              if (!currentUrlOk && resolvedUrl) {
+                urlPatches.set(fileData.id, resolvedUrl);
+                restoredCount++;
+              }
+              // Either way, if we have dbContent, push it to Supabase so future
+              // syncs on other devices also get the content column.
+              if (dbContent && userId && supabase) {
+                await supabase.from('files').update({ content: dbContent, url: resolvedUrl })
+                  .eq('id', fileData.id).eq('user_id', userId).catch(() => {});
+              }
+              continue;
+            }
+
+            // File not yet in state — add it
             const fileItem: FileItem = {
               id: fileData.id, name: fileData.name, size: fileData.size,
               type: fileData.type, url: resolvedUrl,
@@ -1103,10 +1133,15 @@ export const useVaultStore = create<VaultStore>()(
             }
           }
 
-          // Apply all new items to state
+          // Apply all new items to state, and patch URLs for existing files
           set((s) => ({
             folders: [...s.folders, ...newFolders],
-            files: [...s.files, ...newFiles],
+            files: [
+              // Patch existing files that had empty URLs
+              ...s.files.map(f => urlPatches.has(f.id) ? { ...f, url: urlPatches.get(f.id)! } : f),
+              // Append brand-new files
+              ...newFiles,
+            ],
             passwords: [...s.passwords, ...newPasswords],
             notes: [...s.notes, ...newNotes],
             reminders: [...s.reminders, ...newReminders],
