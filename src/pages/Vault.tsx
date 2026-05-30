@@ -48,25 +48,37 @@ const convertHeicToJpeg = async (file: File): Promise<File> => {
   const isHeic = file.type === 'image/heic' || file.type === 'image/heif' ||
     file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
   if (!isHeic) return file;
+
+  const jpegName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+
+  // Fast path: use native browser decoder via createImageBitmap + canvas.
+  // Safari (the primary HEIC source) supports this natively and completes in < 1 s.
   try {
-    const mod = await import('heic2any');
-    const heic2any = (mod as any).default ?? mod;
-    if (typeof heic2any !== 'function') return file;
-
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const timeout = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('timeout')), 30000);
-    });
-    const result = await Promise.race([
-      heic2any({ blob: file, toType: 'image/jpeg', quality: 0.82 }),
-      timeout
-    ]).finally(() => clearTimeout(timeoutId!));
-
-    const raw = Array.isArray(result) ? result[0] : result;
-    if (!(raw instanceof Blob)) return file;
-    return new File([raw], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('no ctx');
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', 0.88)
+    );
+    return new File([blob], jpegName, { type: 'image/jpeg' });
   } catch {
-    return file; // keep original on any failure
+    // Fallback: heic2any (slower pure-JS path for browsers that can't decode HEIC natively)
+    try {
+      const mod = await import('heic2any');
+      const heic2any = (mod as any).default ?? mod;
+      if (typeof heic2any !== 'function') return file;
+      const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+      const raw = Array.isArray(result) ? result[0] : result;
+      if (!(raw instanceof Blob)) return file;
+      return new File([raw], jpegName, { type: 'image/jpeg' });
+    } catch {
+      return file;
+    }
   }
 };
 
@@ -784,15 +796,22 @@ export const Vault: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex-1 bg-slate-950 flex items-center justify-center relative overflow-auto min-h-[300px] sm:min-h-[400px] p-4">
+              <div className="flex-1 bg-slate-950 flex items-center justify-center relative overflow-hidden min-h-[300px] sm:min-h-[400px]" style={{ maxHeight: '65vh' }}>
                 {resolvedPreviewUrl ? (
                   isImage(previewFile.type) ? (
-                    <div className="overflow-auto flex items-center justify-center w-full h-full">
+                    <div className="w-full h-full overflow-auto flex items-center justify-center p-3">
                       <img 
                         src={resolvedPreviewUrl} 
                         alt={previewFile.name} 
-                        className="rounded shadow-2xl transition-transform duration-200 object-contain"
-                        style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', maxWidth: zoomLevel <= 1 ? '100%' : 'none', maxHeight: zoomLevel <= 1 ? '100%' : 'none' }}
+                        className="rounded shadow-2xl transition-transform duration-200"
+                        style={{
+                          transform: `scale(${zoomLevel})`,
+                          transformOrigin: 'center center',
+                          maxWidth: zoomLevel <= 1 ? '100%' : 'none',
+                          maxHeight: zoomLevel <= 1 ? 'calc(65vh - 24px)' : 'none',
+                          objectFit: 'contain',
+                          display: 'block',
+                        }}
                       />
                     </div>
                   ) : isPdf(previewFile.type) ? (

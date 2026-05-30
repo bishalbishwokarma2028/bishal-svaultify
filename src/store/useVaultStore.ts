@@ -303,81 +303,77 @@ export const useVaultStore = create<VaultStore>()(
           user: state.user ? { ...state.user, usedStorage: state.user.usedStorage + newFile.size } : null
         }));
 
-        // Store file content in local IDB (for offline access on this device)
+        // Store file content in local IDB — await so content is readable before we return
         if (fileContent) {
-          storeFileContent(localId, fileContent).catch(() => {});
+          await storeFileContent(localId, fileContent).catch(() => {});
         }
 
+        // ── All Supabase operations run in background — don't block the UI ──
         const userId = get().user?.id;
         if (userId && supabase) {
-          // ── Try to upload Blob to Supabase Storage for cross-device access ──
-          let storageUrl: string | null = null;
-          if (isBlob) {
-            try {
-              await supabase.storage.createBucket('vault-files', { public: true }).catch(() => {});
-              const ext = fileData.name.includes('.') ? fileData.name.split('.').pop()!.toLowerCase() : 'bin';
-              const storagePath = `${userId}/${localId}.${ext}`;
-              const { error: uploadError } = await supabase.storage
-                .from('vault-files')
-                .upload(storagePath, fileContent as Blob, {
-                  contentType: fileData.type || 'application/octet-stream',
-                  upsert: true,
+          (async () => {
+            // Try Supabase Storage upload for cross-device access via public URL
+            let storageUrl: string | null = null;
+            if (isBlob) {
+              try {
+                await supabase.storage.createBucket('vault-files', { public: true }).catch(() => {});
+                const ext = fileData.name.includes('.') ? fileData.name.split('.').pop()!.toLowerCase() : 'bin';
+                const storagePath = `${userId}/${localId}.${ext}`;
+                const { error: uploadError } = await supabase.storage
+                  .from('vault-files')
+                  .upload(storagePath, fileContent as Blob, {
+                    contentType: fileData.type || 'application/octet-stream',
+                    upsert: true,
+                  });
+                if (!uploadError) {
+                  storageUrl = supabase.storage.from('vault-files').getPublicUrl(storagePath).data.publicUrl;
+                  set((state) => ({
+                    files: state.files.map(f => f.id === localId ? { ...f, url: storageUrl! } : f)
+                  }));
+                }
+              } catch { /* keep local */ }
+            }
+
+            // Base64 fallback — files ≤ 20 MB stored in content column for cross-device sync
+            let dbContent: string | null = null;
+            if (!isBlob && typeof fileContent === 'string') {
+              dbContent = fileContent;
+            } else if (isBlob && !storageUrl && (fileContent as Blob).size <= 20 * 1024 * 1024) {
+              try {
+                dbContent = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(fileContent as Blob);
                 });
-              if (!uploadError) {
-                storageUrl = supabase.storage.from('vault-files').getPublicUrl(storagePath).data.publicUrl;
-                // Update local file's URL immediately so preview works from storage URL
+              } catch { /* local-only */ }
+            }
+
+            try {
+              const dbUrl = storageUrl || localFileUrl;
+              const { data, error } = await supabase.from('files').insert([{
+                name: fileData.name, size: fileData.size, type: fileData.type,
+                url: dbUrl, content: dbContent,
+                folder_id: fileData.folderId, category: fileData.category,
+                tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
+                expiry_date: fileData.expiryDate || null, user_id: userId,
+              }]).select().single();
+              if (!error && data) {
+                // Index IDB content under the canonical Supabase UUID as well
+                if (fileContent) {
+                  getFileContent(localId).then(blob => {
+                    if (blob) storeFileContent(data.id, blob).catch(() => {});
+                  }).catch(() => {});
+                }
                 set((state) => ({
-                  files: state.files.map(f => f.id === localId ? { ...f, url: storageUrl! } : f)
+                  files: state.files.map(f => f.id === localId
+                    ? { ...f, id: data.id, url: storageUrl || `${LOCAL_FILE_PREFIX}${data.id}` }
+                    : f
+                  )
                 }));
               }
-            } catch { /* fallback: keep local IDB URL */ }
-          }
-
-          // ── Base64 fallback when Storage bucket isn't set up ──
-          // Files ≤ 20 MB are converted to data URLs and stored in the content
-          // column so other devices can sync them via the normal DB sync path.
-          let dbContent: string | null = null;
-          if (!isBlob && typeof fileContent === 'string') {
-            dbContent = fileContent;
-          } else if (isBlob && !storageUrl && (fileContent as Blob).size <= 20 * 1024 * 1024) {
-            try {
-              dbContent = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(fileContent as Blob);
-              });
-            } catch { /* fallback to local-only */ }
-          }
-
-          try {
-            const dbUrl = storageUrl || localFileUrl;
-            const { data, error } = await supabase.from('files').insert([{
-              name: fileData.name, size: fileData.size, type: fileData.type,
-              url: dbUrl,
-              content: dbContent,
-              folder_id: fileData.folderId, category: fileData.category,
-              tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
-              expiry_date: fileData.expiryDate || null, user_id: userId,
-            }]).select().single();
-            if (!error && data) {
-              // Copy IDB content from local placeholder to Supabase UUID so both
-              // keys work (sync looks up DB url field which still says local://localId,
-              // backup reads the state url which now says local://data.id).
-              if (fileContent) {
-                getFileContent(localId).then(blob => {
-                  if (blob) storeFileContent(data.id, blob).catch(() => {});
-                }).catch(() => {});
-              }
-              // Replace local placeholder ID with the real Supabase UUID
-              set((state) => ({
-                files: state.files.map(f => f.id === localId
-                  ? { ...f, id: data.id, url: storageUrl || `${LOCAL_FILE_PREFIX}${data.id}` }
-                  : f
-                )
-              }));
-            }
-          } catch { /* keep local */ }
+            } catch { /* keep local */ }
+          })().catch(() => {});
         }
         get().logActivity('upload', `Uploaded file "${newFile.name}"`);
       },
