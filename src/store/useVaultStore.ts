@@ -361,12 +361,18 @@ export const useVaultStore = create<VaultStore>()(
               expiry_date: fileData.expiryDate || null, user_id: userId,
             }]).select().single();
             if (!error && data) {
+              // Copy IDB content from local placeholder to Supabase UUID so both
+              // keys work (sync looks up DB url field which still says local://localId,
+              // backup reads the state url which now says local://data.id).
+              if (fileContent) {
+                getFileContent(localId).then(blob => {
+                  if (blob) storeFileContent(data.id, blob).catch(() => {});
+                }).catch(() => {});
+              }
               // Replace local placeholder ID with the real Supabase UUID
-              // If content was stored in DB (small file), the URL stays as local://
-              // for this device (fast IDB access) and syncs via content on other devices.
               set((state) => ({
                 files: state.files.map(f => f.id === localId
-                  ? { ...f, id: data.id, ...(storageUrl ? { url: storageUrl } : {}) }
+                  ? { ...f, id: data.id, url: storageUrl || `${LOCAL_FILE_PREFIX}${data.id}` }
                   : f
                 )
               }));
@@ -1029,8 +1035,17 @@ export const useVaultStore = create<VaultStore>()(
             let dbContent: string | null = null;
 
             if (blobContent && typeof blobContent === 'string' && blobContent.startsWith('data:')) {
-              // Write blob content to local IDB under the canonical Supabase UUID
+              // Write blob content under the Supabase UUID (canonical key)
               await storeFileContent(fileData.id, blobContent).catch(() => {});
+              // ALSO write under the original local placeholder ID that the DB url field
+              // points to (local://localId). This is what syncFromSupabase looks up first,
+              // so storing here ensures sync never clobbers the URL back to ''.
+              if (isLocalFileUrl(fileData.url)) {
+                const originalLocalId = getFileIdFromUrl(fileData.url);
+                if (originalLocalId && originalLocalId !== fileData.id) {
+                  await storeFileContent(originalLocalId, blobContent).catch(() => {});
+                }
+              }
               resolvedUrl = `${LOCAL_FILE_PREFIX}${fileData.id}`;
               dbContent = blobContent;
             } else if (blobContent && typeof blobContent === 'string' && blobContent.startsWith('http')) {
