@@ -23,6 +23,10 @@ import {
   Download,
   Smartphone,
   Monitor,
+  ArchiveRestore,
+  FileDown,
+  FolderOpen,
+  RefreshCw,
 } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { useVaultStore, FREE_STORAGE_LIMIT } from '../store/useVaultStore';
@@ -39,10 +43,10 @@ import {
 import { fetchAdminSettingsFromCloud } from '../lib/premiumRequests';
 
 export const Settings: React.FC = () => {
-  const { user, files, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment } = useVaultStore();
+  const { user, files, folders, passwords, notes, reminders, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment, backupData, restoreData, syncFromSupabase } = useVaultStore();
   const { toast } = useToast();
 
-  const [activeSection, setActiveSection] = useState<'profile' | 'storage' | 'notifications' | 'security' | 'install' | 'support'>('profile');
+  const [activeSection, setActiveSection] = useState<'profile' | 'storage' | 'notifications' | 'security' | 'install' | 'support' | 'backup'>('profile');
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatarUrl || null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -60,6 +64,13 @@ export const Settings: React.FC = () => {
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+
+  // Backup & Restore state
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   // PWA install
   const { canInstall, isInstalled, promptInstall } = usePWAInstall();
@@ -234,6 +245,60 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      await backupData();
+      toast({ title: 'Backup Downloaded', description: 'Your vault backup file has been saved.', type: 'success' });
+    } catch {
+      toast({ title: 'Backup Failed', description: 'Could not create backup file.', type: 'error' });
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (backupInputRef.current) backupInputRef.current.value = '';
+    setIsRestoring(true);
+    setRestoreResult(null);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const json = ev.target?.result as string;
+        const result = await restoreData(json);
+        setRestoreResult(result);
+        if (result.success) {
+          toast({ title: 'Restore Complete', description: result.message, type: 'success' });
+        } else {
+          toast({ title: 'Restore Failed', description: result.message, type: 'error' });
+        }
+      } catch {
+        const msg = 'Could not read the backup file.';
+        setRestoreResult({ success: false, message: msg });
+        toast({ title: 'Restore Failed', description: msg, type: 'error' });
+      } finally {
+        setIsRestoring(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    try {
+      const ok = await syncFromSupabase();
+      if (ok) {
+        toast({ title: 'Sync Complete', description: 'Your vault is up to date.', type: 'success' });
+      } else {
+        toast({ title: 'Sync Issue', description: 'Could not reach cloud. Check your connection.', type: 'error' });
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -293,6 +358,7 @@ export const Settings: React.FC = () => {
           {[
             { id: 'profile', label: 'User Profile', icon: User },
             { id: 'storage', label: 'Storage & Plans', icon: HardDrive },
+            { id: 'backup', label: 'Backup & Restore', icon: ArchiveRestore },
             { id: 'notifications', label: 'Notifications', icon: Bell },
             { id: 'security', label: 'Security', icon: ShieldCheck },
             { id: 'install', label: 'Install App', icon: Smartphone },
@@ -723,6 +789,129 @@ export const Settings: React.FC = () => {
                     </motion.div>
                   )}
                 </AnimatePresence>
+              </div>
+            </div>
+          )}
+
+          {/* BACKUP & RESTORE */}
+          {activeSection === 'backup' && (
+            <div className="space-y-4">
+              {/* Sync Now */}
+              <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
+                    <RefreshCw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Sync from Cloud</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Pull the latest data from the server to this device.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  {[
+                    { label: 'Files', count: files.length },
+                    { label: 'Folders', count: folders.length },
+                    { label: 'Passwords', count: passwords.length },
+                    { label: 'Notes', count: notes.length },
+                  ].map(item => (
+                    <div key={item.label} className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <p className="text-lg font-black text-white">{item.count}</p>
+                      <p className="text-[11px] text-gray-400">{item.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={handleSyncNow}
+                  disabled={isSyncing}
+                  className="w-full py-3 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSyncing ? (
+                    <><div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" /><span>Syncing...</span></>
+                  ) : (
+                    <><RefreshCw className="w-4 h-4" /><span>Sync Now</span></>
+                  )}
+                </button>
+              </div>
+
+              {/* Backup */}
+              <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                    <FileDown className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Export Backup</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Download all your vault data as a single backup file.</p>
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15 space-y-1.5">
+                  <p className="text-xs font-semibold text-emerald-300">What's included in the backup:</p>
+                  <ul className="text-[11px] text-gray-400 space-y-1 list-disc list-inside">
+                    <li>All files (including document content up to 20 MB each)</li>
+                    <li>Folders, passwords, notes, and reminders</li>
+                    <li>File organisation and categories</li>
+                  </ul>
+                </div>
+                <p className="text-[11px] text-gray-500">The backup is a <strong className="text-gray-400">.json</strong> file you can import on any device using the same account. Keep it somewhere safe.</p>
+                <button
+                  onClick={handleBackup}
+                  disabled={isBackingUp}
+                  className="w-full py-3 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isBackingUp ? (
+                    <><div className="w-4 h-4 border-2 border-emerald-300 border-t-transparent rounded-full animate-spin" /><span>Preparing Backup...</span></>
+                  ) : (
+                    <><FileDown className="w-4 h-4" /><span>Download Backup</span></>
+                  )}
+                </button>
+              </div>
+
+              {/* Restore */}
+              <div className="glass-panel-premium rounded-3xl p-6 border border-white/10 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+                    <FolderOpen className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Restore from Backup</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Import a backup file to restore your vault on this device.</p>
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15">
+                  <p className="text-[11px] text-amber-300/80">
+                    <strong>Safe to run multiple times.</strong> Restoring will only add items that aren't already on this device — it will never overwrite or delete existing data.
+                  </p>
+                </div>
+                <input
+                  ref={backupInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleRestoreFile}
+                  className="hidden"
+                />
+                {restoreResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`p-3 rounded-xl flex items-center gap-2.5 ${restoreResult.success ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/20'}`}
+                  >
+                    <CheckCircle2 className={`w-4 h-4 flex-shrink-0 ${restoreResult.success ? 'text-emerald-400' : 'text-rose-400'}`} />
+                    <p className={`text-xs font-semibold ${restoreResult.success ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {restoreResult.message}
+                    </p>
+                  </motion.div>
+                )}
+                <button
+                  onClick={() => backupInputRef.current?.click()}
+                  disabled={isRestoring}
+                  className="w-full py-3 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isRestoring ? (
+                    <><div className="w-4 h-4 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" /><span>Restoring...</span></>
+                  ) : (
+                    <><FolderOpen className="w-4 h-4" /><span>Select Backup File</span></>
+                  )}
+                </button>
               </div>
             </div>
           )}

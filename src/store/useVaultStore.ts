@@ -13,7 +13,7 @@ import {
   ActiveSession
 } from '../types';
 import { supabase } from '../lib/supabase';
-import { idbStorage, storeFileContent, deleteFileContent, LOCAL_FILE_PREFIX, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
+import { idbStorage, storeFileContent, getFileContent, deleteFileContent, LOCAL_FILE_PREFIX, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
 import { saveRequest, isEmailApproved, fetchAdminSettingsFromCloud } from '../lib/premiumRequests';
 
 export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB default
@@ -87,6 +87,8 @@ interface VaultStore {
   createSharedLink: (link: Omit<SharedLink, 'id' | 'createdAt' | 'downloadsCount'>) => Promise<void>;
 
   syncFromSupabase: () => Promise<boolean>;
+  backupData: () => Promise<void>;
+  restoreData: (backupJson: string) => Promise<{ success: boolean; message: string; restored: number }>;
 }
 
 const genId = () => crypto.randomUUID ? crypto.randomUUID() : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -331,13 +333,13 @@ export const useVaultStore = create<VaultStore>()(
             } catch { /* fallback: keep local IDB URL */ }
           }
 
-          // ── Base64 fallback for small blobs when Storage bucket isn't set up ──
-          // Files ≤ 5 MB are converted to data URLs and stored in the content
+          // ── Base64 fallback when Storage bucket isn't set up ──
+          // Files ≤ 20 MB are converted to data URLs and stored in the content
           // column so other devices can sync them via the normal DB sync path.
           let dbContent: string | null = null;
           if (!isBlob && typeof fileContent === 'string') {
             dbContent = fileContent;
-          } else if (isBlob && !storageUrl && (fileContent as Blob).size <= 5 * 1024 * 1024) {
+          } else if (isBlob && !storageUrl && (fileContent as Blob).size <= 20 * 1024 * 1024) {
             try {
               dbContent = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
@@ -788,17 +790,39 @@ export const useVaultStore = create<VaultStore>()(
           let totalUsed = 0;
           const sbFiles: FileItem[] = await Promise.all((filesRes.data || []).map(async (f: any) => {
             totalUsed += Number(f.size || 0);
-            // Restore file content to this device's IndexedDB if not already present
+
+            let resolvedUrl = '';
+
             if (f.content) {
-              const existing = await import('../lib/localDB').then(m => m.getFileContent(f.id));
+              // Base64 content in DB → restore to local IDB keyed by Supabase UUID
+              const existing = await getFileContent(f.id);
               if (!existing) {
                 await storeFileContent(f.id, f.content).catch(() => {});
               }
+              resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
+            } else if (f.url && !f.url.startsWith('local://')) {
+              // Valid remote storage URL — accessible cross-device directly
+              resolvedUrl = f.url;
+            } else {
+              // url is 'local://<originalLocalId>' with no content column.
+              // Check if this device already has the blob (Device A scenario where
+              // the large file was stored under the original local placeholder ID).
+              const localId = f.url ? f.url.replace('local://', '') : null;
+              if (localId) {
+                const localBlob = await getFileContent(localId);
+                if (localBlob) {
+                  // Re-index under the canonical Supabase UUID for consistency
+                  await storeFileContent(f.id, localBlob).catch(() => {});
+                  resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
+                }
+                // else: file was only on the original device → resolvedUrl stays ''
+              }
             }
+
             return {
               id: f.id, name: f.name, size: Number(f.size || 0),
               type: f.type,
-              url: f.content ? `${LOCAL_FILE_PREFIX}${f.id}` : (f.url || ''),
+              url: resolvedUrl,
               folderId: f.folder_id,
               category: f.category, tags: f.tags || [],
               isStarred: f.is_starred, isArchived: f.is_archived,
@@ -906,6 +930,199 @@ export const useVaultStore = create<VaultStore>()(
         } catch (err) {
           console.error('syncFromSupabase error:', err);
           return false;
+        }
+      },
+
+      backupData: async () => {
+        const state = get();
+        const filesWithContent = await Promise.all(
+          state.files.map(async (f) => {
+            let blobContent: string | null = null;
+            if (isLocalFileUrl(f.url)) {
+              const localId = getFileIdFromUrl(f.url);
+              const content = await getFileContent(localId);
+              if (content instanceof Blob) {
+                blobContent = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(content);
+                });
+              } else if (typeof content === 'string') {
+                blobContent = content;
+              }
+            } else if (f.url && !f.url.startsWith('local://')) {
+              blobContent = f.url;
+            }
+            return { ...f, blobContent };
+          })
+        );
+
+        const backup = {
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          userEmail: state.user?.email || '',
+          folders: state.folders,
+          files: filesWithContent,
+          passwords: state.passwords,
+          notes: state.notes,
+          reminders: state.reminders,
+        };
+
+        const json = JSON.stringify(backup);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vaultify-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      },
+
+      restoreData: async (backupJson: string) => {
+        try {
+          const backup = JSON.parse(backupJson);
+          if (!backup.version || !Array.isArray(backup.files)) {
+            return { success: false, message: 'Invalid backup file format.', restored: 0 };
+          }
+
+          const userId = get().user?.id;
+          let restoredCount = 0;
+
+          // 1. Restore folders
+          const existingFolderIds = new Set(get().folders.map((f) => f.id));
+          const newFolders: Folder[] = [];
+          for (const folder of (backup.folders || []) as Folder[]) {
+            if (!existingFolderIds.has(folder.id)) {
+              newFolders.push(folder);
+              if (userId && supabase) {
+                await supabase.from('folders').upsert({
+                  id: folder.id, name: folder.name, parent_id: folder.parentId,
+                  color: folder.color || '#3b82f6', user_id: userId,
+                }).catch(() => {});
+              }
+              restoredCount++;
+            }
+          }
+
+          // 2. Restore files
+          const existingFileIds = new Set(get().files.map((f) => f.id));
+          const newFiles: FileItem[] = [];
+          for (const fileEntry of (backup.files || []) as (FileItem & { blobContent?: string })[]) {
+            if (existingFileIds.has(fileEntry.id)) continue;
+
+            const { blobContent, ...fileData } = fileEntry;
+            let resolvedUrl = fileData.url || '';
+            let dbContent: string | null = null;
+
+            if (blobContent && typeof blobContent === 'string' && blobContent.startsWith('data:')) {
+              // Store blob in local IDB
+              await storeFileContent(fileData.id, blobContent).catch(() => {});
+              resolvedUrl = `${LOCAL_FILE_PREFIX}${fileData.id}`;
+              dbContent = blobContent;
+            } else if (blobContent && typeof blobContent === 'string' && blobContent.startsWith('http')) {
+              resolvedUrl = blobContent;
+            }
+
+            const fileItem: FileItem = {
+              id: fileData.id, name: fileData.name, size: fileData.size,
+              type: fileData.type, url: resolvedUrl,
+              folderId: fileData.folderId, category: fileData.category,
+              tags: fileData.tags || [], isStarred: fileData.isStarred,
+              isArchived: fileData.isArchived, createdAt: fileData.createdAt,
+              updatedAt: fileData.updatedAt, expiryDate: fileData.expiryDate,
+            };
+            newFiles.push(fileItem);
+
+            if (userId && supabase) {
+              await supabase.from('files').upsert({
+                id: fileData.id, name: fileData.name, size: fileData.size,
+                type: fileData.type, url: resolvedUrl,
+                content: dbContent,
+                folder_id: fileData.folderId, category: fileData.category,
+                tags: fileData.tags || [], is_starred: fileData.isStarred,
+                is_archived: fileData.isArchived,
+                expiry_date: fileData.expiryDate || null, user_id: userId,
+              }).catch(() => {});
+            }
+            restoredCount++;
+          }
+
+          // 3. Restore passwords
+          const existingPwdIds = new Set(get().passwords.map((p) => p.id));
+          const newPasswords: PasswordItem[] = [];
+          for (const pwd of (backup.passwords || []) as PasswordItem[]) {
+            if (!existingPwdIds.has(pwd.id)) {
+              newPasswords.push(pwd);
+              if (userId && supabase) {
+                await supabase.from('passwords').upsert({
+                  id: pwd.id, title: pwd.title, username: pwd.username,
+                  password_encrypted: pwd.passwordEncrypted, url: pwd.url || null,
+                  category: pwd.category || 'Personal', notes: pwd.notes || null,
+                  strength: pwd.strength, user_id: userId,
+                }).catch(() => {});
+              }
+              restoredCount++;
+            }
+          }
+
+          // 4. Restore notes
+          const existingNoteIds = new Set(get().notes.map((n) => n.id));
+          const newNotes: NoteItem[] = [];
+          for (const note of (backup.notes || []) as NoteItem[]) {
+            if (!existingNoteIds.has(note.id)) {
+              newNotes.push(note);
+              if (userId && supabase) {
+                await supabase.from('notes').upsert({
+                  id: note.id, title: note.title, content: note.content,
+                  category: note.category, is_pinned: note.isPinned,
+                  is_locked: note.isLocked, tags: note.tags || [], user_id: userId,
+                }).catch(() => {});
+              }
+              restoredCount++;
+            }
+          }
+
+          // 5. Restore reminders
+          const existingRemIds = new Set(get().reminders.map((r) => r.id));
+          const newReminders: ReminderItem[] = [];
+          for (const rem of (backup.reminders || []) as ReminderItem[]) {
+            if (!existingRemIds.has(rem.id)) {
+              newReminders.push(rem);
+              if (userId && supabase) {
+                await supabase.from('reminders').upsert({
+                  id: rem.id, title: rem.title, item_id: rem.itemId,
+                  item_type: rem.itemType, expiry_date: rem.expiryDate,
+                  notify_before_days: rem.notifyBeforeDays,
+                  is_resolved: rem.isResolved, user_id: userId,
+                }).catch(() => {});
+              }
+              restoredCount++;
+            }
+          }
+
+          // Apply all new items to state
+          set((s) => ({
+            folders: [...s.folders, ...newFolders],
+            files: [...s.files, ...newFiles],
+            passwords: [...s.passwords, ...newPasswords],
+            notes: [...s.notes, ...newNotes],
+            reminders: [...s.reminders, ...newReminders],
+          }));
+
+          return {
+            success: true,
+            message: `Successfully restored ${restoredCount} item(s) from backup.`,
+            restored: restoredCount,
+          };
+        } catch (err) {
+          return {
+            success: false,
+            message: `Restore failed: ${(err as Error).message}`,
+            restored: 0,
+          };
         }
       },
     }),
