@@ -173,3 +173,59 @@ export const fetchAdminSettingsFromCloud = async (): Promise<AdminCloudSettings 
   } catch { /* silently ignore */ }
   return null;
 };
+
+// ── Transaction Screenshots ───────────────────────────────────────────────────
+// Stored in the admin account's user_metadata under key `txscr_data` as a JSON
+// array. No Supabase Storage buckets are used — only metadata. Screenshots are
+// resized client-side to ≤800px / 72% JPEG before submission (~60-120 KB each).
+
+export interface TxScreenshot {
+  id: string;
+  user_email: string;
+  user_id: string;
+  transaction_id: string;
+  screenshot_b64: string;
+  submitted_at: string;
+}
+
+const _readTxScreenshots = async (): Promise<TxScreenshot[]> => {
+  try {
+    const client = await makeTempClient();
+    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
+    if (error) return [];
+    const { data: { user } } = await client.auth.getUser();
+    await client.auth.signOut();
+    const raw = user?.user_metadata?.txscr_data;
+    if (!raw) return [];
+    return JSON.parse(raw) as TxScreenshot[];
+  } catch { return []; }
+};
+
+const _writeTxScreenshots = async (screenshots: TxScreenshot[]): Promise<void> => {
+  try {
+    const client = await makeTempClient();
+    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
+    if (error) return;
+    await client.auth.updateUser({ data: { txscr_data: JSON.stringify(screenshots) } });
+    await client.auth.signOut();
+  } catch { /* ignore */ }
+};
+
+/** User calls this on payment submit — adds or replaces their entry in the cloud queue. */
+export const submitTxScreenshot = async (entry: TxScreenshot): Promise<void> => {
+  const existing = await _readTxScreenshots();
+  // One entry per email — overwrite if the same user resubmits
+  const filtered = existing.filter(e => e.user_email.toLowerCase() !== entry.user_email.toLowerCase());
+  await _writeTxScreenshots([...filtered, entry]);
+};
+
+/** Admin calls this to fetch all pending screenshots. */
+export const fetchTxScreenshots = async (): Promise<TxScreenshot[]> => {
+  return _readTxScreenshots();
+};
+
+/** Admin calls this to delete a specific screenshot by id. */
+export const deleteTxScreenshot = async (id: string): Promise<void> => {
+  const existing = await _readTxScreenshots();
+  await _writeTxScreenshots(existing.filter(e => e.id !== id));
+};

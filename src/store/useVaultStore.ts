@@ -14,7 +14,7 @@ import {
 } from '../types';
 import { supabase } from '../lib/supabase';
 import { idbStorage, storeFileContent, getFileContent, deleteFileContent, LOCAL_FILE_PREFIX, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
-import { saveRequest, isEmailApproved, fetchAdminSettingsFromCloud } from '../lib/premiumRequests';
+import { saveRequest, isEmailApproved, fetchAdminSettingsFromCloud, submitTxScreenshot } from '../lib/premiumRequests';
 
 export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB default
 export const getFreeStorageLimit = (): number => {
@@ -126,6 +126,37 @@ export const useVaultStore = create<VaultStore>()(
             status: 'pending',
             submittedAt: new Date().toISOString(),
           });
+
+          // Fire-and-forget: resize screenshot and upload to cloud admin metadata
+          if (screenshot) {
+            (async () => {
+              try {
+                const resized = await new Promise<string>((resolve) => {
+                  const img = new Image();
+                  img.onload = () => {
+                    const MAX = 800;
+                    let w = img.naturalWidth, h = img.naturalHeight;
+                    const scale = Math.min(1, MAX / Math.max(w, h));
+                    w = Math.round(w * scale); h = Math.round(h * scale);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', 0.72));
+                  };
+                  img.onerror = () => resolve(screenshot);
+                  img.src = screenshot;
+                });
+                await submitTxScreenshot({
+                  id: txId,
+                  user_email: user.email,
+                  user_id: user.id,
+                  transaction_id: txId,
+                  screenshot_b64: resized,
+                  submitted_at: new Date().toISOString(),
+                });
+              } catch { /* cloud upload failure is non-fatal */ }
+            })();
+          }
         }
         set({ paymentStatus: 'pending', premiumTransactionId: txId, premiumScreenshot: screenshot || '' });
       },

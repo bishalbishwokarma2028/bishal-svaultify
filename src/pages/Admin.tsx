@@ -44,8 +44,11 @@ import {
   setAdminSession,
   clearAdminSession,
   pushAdminSettingsToCloud,
+  fetchTxScreenshots,
+  deleteTxScreenshot,
   PremiumRequest,
   RegisteredUser,
+  TxScreenshot,
 } from '../lib/premiumRequests';
 import {
   getAllConversations,
@@ -63,7 +66,7 @@ const ADMIN_PASSWORD = 'bishal@ado@9746294386';
 const APP_VERSION = '2.1.0';
 const FREE_LIMIT_GB = 5;
 
-type AdminTab = 'requests' | 'users' | 'stats' | 'settings' | 'announce' | 'messages' | 'access';
+type AdminTab = 'requests' | 'users' | 'stats' | 'settings' | 'announce' | 'messages' | 'access' | 'screenshots';
 
 export const Admin: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => getAdminSession());
@@ -102,6 +105,12 @@ export const Admin: React.FC = () => {
   // Subscription price state
   const [priceInput, setPriceInput] = useState(() => String(getSubscriptionPrice()));
   const [priceSaved, setPriceSaved] = useState(false);
+
+  // Transaction Screenshots state
+  const [txScreenshots, setTxScreenshots] = useState<TxScreenshot[]>([]);
+  const [screenshotsLoading, setScreenshotsLoading] = useState(false);
+  const [viewingScreenshot, setViewingScreenshot] = useState<TxScreenshot | null>(null);
+  const [deletingScreenshotId, setDeletingScreenshotId] = useState<string | null>(null);
 
   // Plan access control state
   const PLAN_SECTIONS = [
@@ -159,6 +168,28 @@ export const Admin: React.FC = () => {
     setMessagesUnread(getUnreadAdminTotal());
   };
 
+  const loadTxScreenshots = async () => {
+    setScreenshotsLoading(true);
+    try {
+      const data = await fetchTxScreenshots();
+      setTxScreenshots(data.sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()));
+    } finally {
+      setScreenshotsLoading(false);
+    }
+  };
+
+  const handleDeleteTxScreenshot = async (id: string) => {
+    setDeletingScreenshotId(id);
+    try {
+      await deleteTxScreenshot(id);
+      setTxScreenshots(prev => prev.filter(s => s.id !== id));
+      if (viewingScreenshot?.id === id) setViewingScreenshot(null);
+      flash('Screenshot deleted from cloud.');
+    } finally {
+      setDeletingScreenshotId(null);
+    }
+  };
+
   useEffect(() => {
     if (isLoggedIn) { loadData(); loadMessages(); }
   }, [isLoggedIn]);
@@ -178,6 +209,10 @@ export const Admin: React.FC = () => {
       if (savedLimit) setFreeLimit(Number(savedLimit));
     }
   }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (activeTab === 'screenshots' && isLoggedIn) { loadTxScreenshots(); }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'messages' && selectedConvEmail) {
@@ -312,6 +347,7 @@ export const Admin: React.FC = () => {
     { id: 'requests', label: 'Requests', icon: Crown, badge: counts.pending },
     { id: 'users', label: 'All Users', icon: Users, badge: registeredUsers.length },
     { id: 'messages', label: 'Messages', icon: MessageSquare, badge: messagesUnread },
+    { id: 'screenshots', label: 'Screenshots', icon: ImageIcon, badge: txScreenshots.length || undefined },
     { id: 'stats', label: 'Statistics', icon: BarChart3 },
     { id: 'announce', label: 'Announce', icon: Bell },
     { id: 'access', label: 'Plan Access', icon: ToggleLeft },
@@ -406,6 +442,7 @@ export const Admin: React.FC = () => {
   }
 
   return (
+    <>
     <div className={`min-h-screen text-gray-100 ${adminTheme === 'light' ? 'bg-slate-100' : 'bg-[#030712]'}`} data-admin-theme={adminTheme}>
       {/* Header */}
       <div className={`border-b backdrop-blur-xl sticky top-0 z-20 ${adminTheme === 'light' ? 'bg-white/90 border-slate-200' : 'bg-slate-900/60 border-white/10'}`}>
@@ -1080,6 +1117,104 @@ export const Admin: React.FC = () => {
           </div>
         )}
 
+        {/* ── SCREENSHOTS TAB ── */}
+        {activeTab === 'screenshots' && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-blue-400" />
+                  Transaction Screenshots
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Payment screenshots submitted by users · stored in private cloud metadata, not Supabase Storage
+                </p>
+              </div>
+              <button
+                onClick={loadTxScreenshots}
+                disabled={screenshotsLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-gray-300 transition-all disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${screenshotsLoading ? 'animate-spin' : ''}`} />
+                {screenshotsLoading ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
+
+            {screenshotsLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : txScreenshots.length === 0 ? (
+              <div className="py-16 text-center rounded-3xl bg-slate-900/60 border border-white/10">
+                <ImageIcon className="w-10 h-10 text-gray-700 mx-auto mb-3" />
+                <p className="text-sm text-gray-500">No transaction screenshots yet.</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Screenshots appear here when users submit a payment via the Settings page.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {txScreenshots.map(scr => (
+                  <div key={scr.id} className="rounded-2xl bg-slate-900/60 border border-white/10 overflow-hidden group">
+                    <div
+                      className="relative cursor-pointer bg-slate-800"
+                      style={{ paddingBottom: '60%' }}
+                      onClick={() => setViewingScreenshot(scr)}
+                    >
+                      <img
+                        src={scr.screenshot_b64}
+                        alt="Transaction screenshot"
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                        <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{scr.user_email}</p>
+                          <p className="text-[10px] text-gray-500 font-mono mt-0.5 truncate">TX: {scr.transaction_id}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{new Date(scr.submitted_at).toLocaleString()}</p>
+                        </div>
+                        <span className="flex-shrink-0 text-[9px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                          Pending
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setViewingScreenshot(scr)}
+                          className="flex-1 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/20 text-blue-400 text-[11px] font-bold transition-all flex items-center justify-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          View Full
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTxScreenshot(scr.id)}
+                          disabled={deletingScreenshotId === scr.id}
+                          className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 transition-all disabled:opacity-40"
+                          title="Delete screenshot from cloud"
+                        >
+                          {deletingScreenshotId === scr.id ? (
+                            <div className="w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/15 text-[11px] text-blue-300/70">
+              💡 Screenshots are stored in private cloud metadata — not in Supabase Storage. Deleting here permanently removes
+              the screenshot from the cloud but does <strong>not</strong> affect the payment request status in the Requests tab.
+            </div>
+          </div>
+        )}
+
         {/* ── SETTINGS TAB ── */}
         {activeTab === 'settings' && (
           <div className="space-y-4">
@@ -1161,5 +1296,66 @@ export const Admin: React.FC = () => {
         )}
       </div>
     </div>
+
+    {/* ── FULL-SIZE SCREENSHOT MODAL ── */}
+    <AnimatePresence>
+      {viewingScreenshot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
+            onClick={() => setViewingScreenshot(null)}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+            className="relative w-full max-w-2xl bg-slate-900 rounded-3xl border border-white/10 shadow-2xl z-10 flex flex-col overflow-hidden"
+            style={{ maxHeight: '90vh' }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-white truncate">{viewingScreenshot.user_email}</p>
+                <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                  {viewingScreenshot.transaction_id} · {new Date(viewingScreenshot.submitted_at).toLocaleString()}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                <button
+                  onClick={() => handleDeleteTxScreenshot(viewingScreenshot.id)}
+                  disabled={deletingScreenshotId === viewingScreenshot.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-bold transition-all disabled:opacity-40"
+                >
+                  {deletingScreenshotId === viewingScreenshot.id ? (
+                    <div className="w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  Delete
+                </button>
+                <button
+                  onClick={() => setViewingScreenshot(null)}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto flex-1 flex items-center justify-center p-4 bg-slate-950/50">
+              <img
+                src={viewingScreenshot.screenshot_b64}
+                alt="Transaction screenshot"
+                className="max-w-full h-auto rounded-xl object-contain shadow-xl"
+                style={{ maxHeight: 'calc(90vh - 100px)' }}
+              />
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+    </>
   );
 };
