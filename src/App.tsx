@@ -26,6 +26,31 @@ import { HiddenVault } from './pages/HiddenVault';
 import { Settings } from './pages/Settings';
 import { MobileScanner } from './components/scanner/MobileScanner';
 
+const PlanGate: React.FC<{ sectionId: string; children: React.ReactNode }> = ({ sectionId, children }) => {
+  const { planAccess, isPremium } = useVaultStore();
+  const isLocked = (planAccess[sectionId] || 'free') === 'premium' && !isPremium;
+  if (!isLocked) return <>{children}</>;
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
+      <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+        <span className="text-4xl">👑</span>
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-xl font-bold text-white">Premium Feature</h2>
+        <p className="text-sm text-gray-400 max-w-sm leading-relaxed">
+          This section is available to Premium subscribers only. Upgrade your plan to unlock full access.
+        </p>
+      </div>
+      <a
+        href="/settings"
+        className="px-6 py-3 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 font-bold text-sm transition-all"
+      >
+        Upgrade to Premium →
+      </a>
+    </div>
+  );
+};
+
 const AdminBanner: React.FC = () => {
   const [msg, setMsg] = React.useState('');
   const [dismissed, setDismissed] = React.useState(false);
@@ -259,15 +284,15 @@ export const App: React.FC = () => {
                     <main className="flex-1 overflow-y-auto px-3 sm:px-5 lg:px-8 pt-4 md:pt-6 pb-6">
                       <Routes>
                         <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="/vault" element={<Vault />} />
-                        <Route path="/passwords" element={<Passwords />} />
-                        <Route path="/notes" element={<Notes />} />
-                        <Route path="/reminders" element={<Reminders />} />
-                        <Route path="/search" element={<Search />} />
+                        <Route path="/vault" element={<PlanGate sectionId="vault"><Vault /></PlanGate>} />
+                        <Route path="/passwords" element={<PlanGate sectionId="passwords"><Passwords /></PlanGate>} />
+                        <Route path="/notes" element={<PlanGate sectionId="notes"><Notes /></PlanGate>} />
+                        <Route path="/reminders" element={<PlanGate sectionId="reminders"><Reminders /></PlanGate>} />
+                        <Route path="/search" element={<PlanGate sectionId="search"><Search /></PlanGate>} />
                         <Route path="/security" element={<Security />} />
-                        <Route path="/hidden-vault" element={<HiddenVault />} />
+                        <Route path="/hidden-vault" element={<PlanGate sectionId="hidden-vault"><HiddenVault /></PlanGate>} />
                         <Route path="/settings" element={<Settings />} />
-                        <Route path="/scanner" element={<div className="py-4"><MobileScanner /></div>} />
+                        <Route path="/scanner" element={<PlanGate sectionId="scanner"><div className="py-4"><MobileScanner /></div></PlanGate>} />
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
                       </Routes>
                     </main>

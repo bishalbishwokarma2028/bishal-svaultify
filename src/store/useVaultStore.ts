@@ -36,6 +36,9 @@ interface VaultStore {
   paymentStatus: 'none' | 'pending' | 'approved';
   premiumTransactionId: string;
   premiumScreenshot: string;
+  planAccess: Record<string, 'free' | 'premium'>;
+  freeStorageLimitGB: number;
+  subscriptionPrice: number;
   submitPremiumPayment: (screenshot?: string) => void;
   approvePayment: () => void;
   syncPremiumFromGlobal: () => void;
@@ -107,6 +110,9 @@ export const useVaultStore = create<VaultStore>()(
       premiumTransactionId: '',
       dataOwnerId: null,
       premiumScreenshot: '',
+      planAccess: (() => { try { return JSON.parse(localStorage.getItem('vaultify-plan-access') || '{}'); } catch { return {}; } })(),
+      freeStorageLimitGB: (() => { const g = Number(localStorage.getItem('vaultify-admin-free-limit-gb')); return g > 0 ? g : 5; })(),
+      subscriptionPrice: (() => { const p = Number(localStorage.getItem('vaultify-subscription-price')); return p > 0 ? p : 300; })(),
       submitPremiumPayment: (screenshot) => {
         const user = get().user;
         const txId = 'SCR-' + Date.now();
@@ -926,9 +932,14 @@ export const useVaultStore = create<VaultStore>()(
               }
               if (cloudCfg.planAccess && typeof cloudCfg.planAccess === 'object') {
                 localStorage.setItem('vaultify-plan-access', JSON.stringify(cloudCfg.planAccess));
+                set({ planAccess: cloudCfg.planAccess });
               }
               if (cloudCfg.freeStorageLimitGB > 0) {
                 localStorage.setItem('vaultify-admin-free-limit-gb', String(cloudCfg.freeStorageLimitGB));
+                set({ freeStorageLimitGB: cloudCfg.freeStorageLimitGB });
+              }
+              if (cloudCfg.subscriptionPrice > 0) {
+                set({ subscriptionPrice: cloudCfg.subscriptionPrice });
               }
               if (typeof cloudCfg.announcement === 'string') {
                 localStorage.setItem('vaultify-admin-announcement', cloudCfg.announcement);

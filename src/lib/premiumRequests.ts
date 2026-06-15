@@ -128,7 +128,7 @@ const _ADMIN_EMAIL = 'bishalbishwokarma089@gmail.com';
 const _ADMIN_PASSWORD = 'bishal@ado@9746294386';
 
 let _cfgCache: { settings: AdminCloudSettings; ts: number } | null = null;
-const CFG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CFG_CACHE_TTL = 30 * 1000; // 30 seconds — short so admin changes reach users quickly
 
 const makeTempClient = async () => {
   const { createClient } = await import('@supabase/supabase-js');

@@ -27,9 +27,10 @@ import {
   FileDown,
   FolderOpen,
   RefreshCw,
+  Cloud,
 } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { useVaultStore, FREE_STORAGE_LIMIT } from '../store/useVaultStore';
+import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
 import {
@@ -37,13 +38,11 @@ import {
   sendUserMessage,
   markUserMessagesRead,
   getUnreadForUser,
-  getSubscriptionPrice,
   SupportMessage,
 } from '../lib/supportChat';
-import { fetchAdminSettingsFromCloud } from '../lib/premiumRequests';
 
 export const Settings: React.FC = () => {
-  const { user, files, folders, passwords, notes, reminders, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment, backupData, restoreData, syncFromSupabase } = useVaultStore();
+  const { user, files, folders, passwords, notes, reminders, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment, backupData, restoreData, syncFromSupabase, subscriptionPrice: storePrice, planAccess, freeStorageLimitGB } = useVaultStore();
   const { toast } = useToast();
 
   const [activeSection, setActiveSection] = useState<'profile' | 'storage' | 'notifications' | 'security' | 'install' | 'support' | 'backup'>('profile');
@@ -68,6 +67,8 @@ export const Settings: React.FC = () => {
   // Backup & Restore state
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isCloudRestoring, setIsCloudRestoring] = useState(false);
+  const [cloudRestoreResult, setCloudRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
   const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
@@ -102,7 +103,7 @@ export const Settings: React.FC = () => {
   const [chatInput, setChatInput] = useState('');
   const [chatUnread, setChatUnread] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const [subscriptionPrice, setSubscriptionPriceState] = useState(getSubscriptionPrice);
+  const subscriptionPrice = storePrice;
 
   useEffect(() => {
     if (user?.email) {
@@ -131,26 +132,9 @@ export const Settings: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'vaultify-subscription-price') {
-        setSubscriptionPriceState(getSubscriptionPrice());
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  // Fetch latest admin settings from cloud on mount so subscription price,
-  // free tier limit, etc. reflect whatever the admin has set.
-  useEffect(() => {
-    fetchAdminSettingsFromCloud().then(cfg => {
-      if (cfg?.subscriptionPrice && cfg.subscriptionPrice > 0) {
-        localStorage.setItem('vaultify-subscription-price', String(cfg.subscriptionPrice));
-        setSubscriptionPriceState(cfg.subscriptionPrice);
-      }
-    }).catch(() => {});
-  }, []);
+  // subscriptionPrice, planAccess, freeStorageLimitGB now come directly from
+  // the Zustand store and are updated live whenever syncFromSupabase runs
+  // (which fires on every visibilitychange / login). No local polling needed.
 
   const handleSendChat = () => {
     if (!chatInput.trim() || !user?.email) return;
@@ -164,7 +148,8 @@ export const Settings: React.FC = () => {
   const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
   const usedMB = (usedBytes / (1024 * 1024)).toFixed(2);
   const usedGB = (usedBytes / (1024 * 1024 * 1024)).toFixed(3);
-  const freePct = Math.min(100, Math.round((usedBytes / FREE_STORAGE_LIMIT) * 100));
+  const freeLimitBytes = freeStorageLimitGB * 1024 * 1024 * 1024;
+  const freePct = Math.min(100, Math.round((usedBytes / freeLimitBytes) * 100));
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -296,6 +281,22 @@ export const Settings: React.FC = () => {
       }
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleCloudRestore = async () => {
+    setIsCloudRestoring(true);
+    setCloudRestoreResult(null);
+    try {
+      const ok = await syncFromSupabase();
+      if (ok) {
+        setCloudRestoreResult({ success: true, message: 'Cloud restore complete — all your files, passwords, notes, and reminders have been pulled from the cloud.' });
+        toast({ title: 'Cloud Restore Done', description: 'Your vault has been restored from the cloud.', type: 'success' });
+      } else {
+        setCloudRestoreResult({ success: false, message: 'Could not reach the cloud. Make sure you are connected to the internet and try again.' });
+      }
+    } finally {
+      setIsCloudRestoring(false);
     }
   };
 
@@ -496,8 +497,8 @@ export const Settings: React.FC = () => {
                         />
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-gray-500">
-                        <span>{freePct}% of 5 GB used</span>
-                        <span>{(5 - parseFloat(usedGB)).toFixed(2)} GB remaining</span>
+                        <span>{freePct}% of {freeStorageLimitGB} GB used</span>
+                        <span>{(freeStorageLimitGB - parseFloat(usedGB)).toFixed(2)} GB remaining</span>
                       </div>
                     </>
                   )}
@@ -820,6 +821,67 @@ export const Settings: React.FC = () => {
                     <strong className="text-amber-300">Important:</strong> Files under 20 MB are also backed up to the cloud automatically and can sync to other devices. Files larger than 20 MB exist only on this device — use the Backup feature below to move them to a new device.
                   </p>
                 </div>
+              </div>
+
+              {/* ── Cloud Restore — no old phone needed ── */}
+              <div className="glass-panel-premium rounded-3xl p-6 border border-emerald-500/25 bg-emerald-500/[0.03] space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Restore from Cloud <span className="ml-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-emerald-400">RECOMMENDED</span></h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Works on any new device — no old phone or backup file needed.</p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
+                  <p className="text-[11px] font-bold text-gray-200">How this works:</p>
+                  <ul className="text-[11px] text-gray-400 space-y-1.5">
+                    <li className="flex items-start gap-1.5"><span className="text-emerald-400 mt-0.5">✓</span> <span>Your passwords, notes, reminders, and file names are stored in the cloud automatically — they restore instantly.</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-emerald-400 mt-0.5">✓</span> <span>Files under 20 MB also have their content backed up in the cloud — they open normally after restore.</span></li>
+                    <li className="flex items-start gap-1.5"><span className="text-amber-400 mt-0.5">⚠</span> <span>Files larger than 20 MB are stored only on the device that uploaded them. Use the "Download Backup" option below to move large files to a new device.</span></li>
+                  </ul>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-1.5">
+                  <p className="text-[11px] font-bold text-gray-300">Steps — old phone lost or unavailable:</p>
+                  {[
+                    'Open Vaultify on your new device and sign in with the same email.',
+                    'Tap "Restore from Cloud" below — all your data is pulled from the cloud.',
+                    'Done! All files under 20 MB open immediately. Larger files need to be re-uploaded.',
+                  ].map((s, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                      <p className="text-[11px] text-gray-400 leading-relaxed">{s}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {cloudRestoreResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`p-3 rounded-xl flex items-center gap-2.5 ${cloudRestoreResult.success ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/20'}`}
+                  >
+                    <CheckCircle2 className={`w-4 h-4 flex-shrink-0 ${cloudRestoreResult.success ? 'text-emerald-400' : 'text-rose-400'}`} />
+                    <p className={`text-xs font-semibold ${cloudRestoreResult.success ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {cloudRestoreResult.message}
+                    </p>
+                  </motion.div>
+                )}
+
+                <button
+                  onClick={handleCloudRestore}
+                  disabled={isCloudRestoring}
+                  className="w-full py-3 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCloudRestoring ? (
+                    <><div className="w-4 h-4 border-2 border-emerald-300 border-t-transparent rounded-full animate-spin" /><span>Restoring from Cloud...</span></>
+                  ) : (
+                    <><Cloud className="w-4 h-4" /><span>Restore from Cloud</span></>
+                  )}
+                </button>
               </div>
 
               {/* Sync Now */}
