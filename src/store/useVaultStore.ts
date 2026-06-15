@@ -944,12 +944,20 @@ export const useVaultStore = create<VaultStore>()(
               if (typeof cloudCfg.announcement === 'string') {
                 localStorage.setItem('vaultify-admin-announcement', cloudCfg.announcement);
               }
-              // Grant premium if this user's email is in the approved list
+              // Grant OR revoke premium based on the admin-controlled approved list.
+              // This is the single source of truth — local isPremium state is always
+              // overwritten by whatever the cloud says, so admin removals take effect
+              // within one sync cycle (≤30 s with visibilitychange).
               const user = get().user;
               if (user && Array.isArray(cloudCfg.approvedEmails)) {
                 const approvedSet = new Set(cloudCfg.approvedEmails.map((e: string) => e.toLowerCase().trim()));
                 if (approvedSet.has(user.email.toLowerCase().trim())) {
                   set({ isPremium: true, paymentStatus: 'approved' });
+                } else {
+                  // Not in approved list — revoke premium unconditionally.
+                  // If user currently has isPremium:true or paymentStatus:'approved',
+                  // that means admin removed them and we must reflect that immediately.
+                  set({ isPremium: false, paymentStatus: 'none' });
                 }
               }
             }
