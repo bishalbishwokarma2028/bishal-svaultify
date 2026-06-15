@@ -42,7 +42,10 @@ interface MobileScannerProps {
   onScanComplete?: (fileId: string) => void;
 }
 
-type FilterType = 'original' | 'magic' | 'grayscale' | 'bw' | 'warm' | 'color' | 'sepia' | 'sharpen';
+type FilterType =
+  | 'original' | 'magic' | 'grayscale' | 'bw' | 'warm' | 'color' | 'sepia' | 'sharpen'
+  | 'cool' | 'vivid' | 'fade' | 'vintage' | 'night' | 'emboss' | 'invert'
+  | 'teal' | 'pink' | 'sketch' | 'blueprint' | 'infrared';
 
 interface ScannedPage {
   id: string;
@@ -55,14 +58,26 @@ interface ScannedPage {
 }
 
 const FILTERS: { id: FilterType; label: string; icon: string }[] = [
-  { id: 'magic', label: 'Magic', icon: '✨' },
-  { id: 'original', label: 'Original', icon: '🎨' },
-  { id: 'color', label: 'Color', icon: '🌈' },
-  { id: 'grayscale', label: 'Gray', icon: '🩶' },
-  { id: 'bw', label: 'B&W', icon: '◼' },
-  { id: 'warm', label: 'Warm', icon: '🌅' },
-  { id: 'sepia', label: 'Sepia', icon: '📜' },
-  { id: 'sharpen', label: 'Sharpen', icon: '🔪' },
+  { id: 'magic',     label: 'Magic',     icon: '✨' },
+  { id: 'original',  label: 'Original',  icon: '🎨' },
+  { id: 'color',     label: 'Color',     icon: '🌈' },
+  { id: 'grayscale', label: 'Gray',      icon: '🩶' },
+  { id: 'bw',        label: 'B&W',       icon: '◼' },
+  { id: 'warm',      label: 'Warm',      icon: '🌅' },
+  { id: 'cool',      label: 'Cool',      icon: '❄️' },
+  { id: 'sepia',     label: 'Sepia',     icon: '📜' },
+  { id: 'vintage',   label: 'Vintage',   icon: '📷' },
+  { id: 'fade',      label: 'Fade',      icon: '🌫️' },
+  { id: 'vivid',     label: 'Vivid',     icon: '🔆' },
+  { id: 'night',     label: 'Night',     icon: '🌙' },
+  { id: 'teal',      label: 'Teal',      icon: '🟦' },
+  { id: 'pink',      label: 'Pink',      icon: '🌸' },
+  { id: 'infrared',  label: 'Infrared',  icon: '🌡️' },
+  { id: 'invert',    label: 'Invert',    icon: '🔄' },
+  { id: 'blueprint', label: 'Blueprint', icon: '📐' },
+  { id: 'emboss',    label: 'Emboss',    icon: '🗿' },
+  { id: 'sketch',    label: 'Sketch',    icon: '✏️' },
+  { id: 'sharpen',   label: 'Sharpen',   icon: '🔪' },
 ];
 
 const applyCanvasFilter = (
@@ -113,36 +128,70 @@ const applyCanvasFilter = (
           const gray = 0.299 * r + 0.587 * g + 0.114 * b;
           const c2 = 1.8;
           const val = Math.min(255, Math.max(0, ((gray - 128) * c2) + 210));
-          r = Math.min(255, val + 8);
-          g = Math.min(255, val + 5);
-          b = Math.min(255, val);
+          r = Math.min(255, val + 8); g = Math.min(255, val + 5); b = Math.min(255, val);
         } else if (filterType === 'grayscale') {
           const gray = 0.299 * r + 0.587 * g + 0.114 * b;
           r = g = b = Math.round(gray);
         } else if (filterType === 'bw') {
           const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-          const c2 = 2.2;
-          const v = Math.min(255, Math.max(0, ((gray - 128) * c2) + 128));
+          const v = Math.min(255, Math.max(0, ((gray - 128) * 2.2) + 128));
           r = g = b = v > 140 ? 255 : 0;
         } else if (filterType === 'warm') {
-          r = Math.min(255, r * 1.12);
-          g = Math.min(255, g * 1.02);
-          b = Math.min(255, b * 0.85);
+          r = Math.min(255, r * 1.12); g = Math.min(255, g * 1.02); b = Math.min(255, b * 0.85);
+        } else if (filterType === 'cool') {
+          r = Math.min(255, r * 0.88); g = Math.min(255, g * 0.97); b = Math.min(255, b * 1.18);
         } else if (filterType === 'sepia') {
           const nr = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
           const ng = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
           const nb = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
           r = nr; g = ng; b = nb;
         } else if (filterType === 'color') {
-          r = Math.min(255, r * 1.05);
-          g = Math.min(255, g * 1.05);
-          b = Math.min(255, b * 1.1);
+          r = Math.min(255, r * 1.05); g = Math.min(255, g * 1.05); b = Math.min(255, b * 1.1);
           const gray = 0.299 * r + 0.587 * g + 0.114 * b;
           r = Math.min(255, gray + (r - gray) * 1.4);
           g = Math.min(255, gray + (g - gray) * 1.4);
           b = Math.min(255, gray + (b - gray) * 1.4);
-        } else if (filterType === 'sharpen') {
-          // Will apply kernel after loop - treat as original for now
+        } else if (filterType === 'vivid') {
+          // Boost saturation strongly
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          r = Math.min(255, Math.max(0, gray + (r - gray) * 2.2));
+          g = Math.min(255, Math.max(0, gray + (g - gray) * 2.2));
+          b = Math.min(255, Math.max(0, gray + (b - gray) * 2.2));
+        } else if (filterType === 'fade') {
+          // Faded / matte: reduce contrast, lift shadows
+          r = Math.round(r * 0.75 + 48); g = Math.round(g * 0.75 + 40); b = Math.round(b * 0.75 + 36);
+          r = Math.min(255, r); g = Math.min(255, g); b = Math.min(255, b);
+        } else if (filterType === 'vintage') {
+          // Sepia-ish + lifted blacks + slight vignette
+          const nr = Math.min(255, r * 0.45 + g * 0.50 + b * 0.12 + 30);
+          const ng = Math.min(255, r * 0.38 + g * 0.44 + b * 0.10 + 20);
+          const nb = Math.min(255, r * 0.22 + g * 0.28 + b * 0.12 + 10);
+          r = nr; g = ng; b = nb;
+        } else if (filterType === 'night') {
+          // Dark teal / underexposed
+          r = Math.min(255, r * 0.55); g = Math.min(255, g * 0.65); b = Math.min(255, b * 0.85);
+        } else if (filterType === 'teal') {
+          // Teal & orange: warm the reds, cool the blues/greens
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (lum > 150) { // highlights → warm orange
+            r = Math.min(255, r * 1.15); g = Math.min(255, g * 0.96); b = Math.min(255, b * 0.78);
+          } else { // shadows → cool teal
+            r = Math.min(255, r * 0.72); g = Math.min(255, g * 1.05); b = Math.min(255, b * 1.22);
+          }
+        } else if (filterType === 'pink') {
+          r = Math.min(255, r * 1.08 + 12); g = Math.min(255, g * 0.88); b = Math.min(255, b * 0.95 + 8);
+        } else if (filterType === 'infrared') {
+          // Swap channels: plants glow white, sky goes dark
+          const tmp = r; r = Math.min(255, g * 1.1); g = Math.min(255, tmp * 0.6); b = Math.min(255, b * 0.5);
+        } else if (filterType === 'invert') {
+          r = 255 - r; g = 255 - g; b = 255 - b;
+        } else if (filterType === 'blueprint') {
+          // White on blueprint-blue: invert + blue tint
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          const inv = 255 - gray;
+          r = Math.round(inv * 0.18); g = Math.round(inv * 0.45); b = Math.min(255, Math.round(inv * 0.85 + 40));
+        } else if (filterType === 'emboss' || filterType === 'sketch' || filterType === 'sharpen') {
+          // These use kernel second-pass — treat as original in first pass
         }
 
         r = Math.min(255, Math.max(0, (r - 128) * cFactor + 128));
@@ -157,29 +206,58 @@ const applyCanvasFilter = (
 
       ctx.putImageData(imageData, 0, 0);
 
-      // Apply sharpen kernel as a second pass
-      if (filterType === 'sharpen') {
-        const src = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const dst = ctx.createImageData(canvas.width, canvas.height);
+      // Kernel-based second passes
+      if (filterType === 'sharpen' || filterType === 'emboss' || filterType === 'sketch') {
+        const src2 = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const dst2 = ctx.createImageData(canvas.width, canvas.height);
         const W = canvas.width;
         const H = canvas.height;
-        const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+
+        let kernel: number[];
+        if (filterType === 'sharpen') {
+          kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+        } else if (filterType === 'emboss') {
+          kernel = [-2, -1, 0, -1, 1, 1, 0, 1, 2];
+        } else {
+          // sketch: edge-detect via Laplacian, then invert
+          kernel = [0, -1, 0, -1, 4, -1, 0, -1, 0];
+        }
+
         for (let y = 1; y < H - 1; y++) {
           for (let x = 1; x < W - 1; x++) {
             for (let c = 0; c < 3; c++) {
               let val = 0;
               for (let ky = -1; ky <= 1; ky++) {
                 for (let kx = -1; kx <= 1; kx++) {
-                  const idx = ((y + ky) * W + (x + kx)) * 4 + c;
-                  val += src.data[idx] * kernel[(ky + 1) * 3 + (kx + 1)];
+                  const idx2 = ((y + ky) * W + (x + kx)) * 4 + c;
+                  val += src2.data[idx2] * kernel[(ky + 1) * 3 + (kx + 1)];
                 }
               }
-              dst.data[(y * W + x) * 4 + c] = Math.min(255, Math.max(0, val));
+              if (filterType === 'sketch') {
+                // Invert the edge map: edges become dark on white bg
+                val = 255 - Math.min(255, Math.max(0, val));
+              } else if (filterType === 'emboss') {
+                val = Math.min(255, Math.max(0, val + 128));
+              } else {
+                val = Math.min(255, Math.max(0, val));
+              }
+              dst2.data[(y * W + x) * 4 + c] = val;
             }
-            dst.data[(y * W + x) * 4 + 3] = 255;
+            dst2.data[(y * W + x) * 4 + 3] = 255;
           }
         }
-        ctx.putImageData(dst, 0, 0);
+        // Fill border pixels with neutral value
+        for (let x = 0; x < W; x++) {
+          for (let c = 0; c < 3; c++) {
+            const top = (0 * W + x) * 4 + c;
+            const bot = ((H - 1) * W + x) * 4 + c;
+            dst2.data[top] = filterType === 'sketch' ? 255 : 128;
+            dst2.data[bot] = filterType === 'sketch' ? 255 : 128;
+          }
+          dst2.data[(0 * W + x) * 4 + 3] = 255;
+          dst2.data[((H - 1) * W + x) * 4 + 3] = 255;
+        }
+        ctx.putImageData(dst2, 0, 0);
       }
 
       resolve(canvas.toDataURL('image/jpeg', 0.93));
