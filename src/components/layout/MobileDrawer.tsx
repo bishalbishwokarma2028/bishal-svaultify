@@ -39,14 +39,15 @@ const navItems = [
 ];
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose, onQuickUpload }) => {
-  const { user, files, isPremium, logout, clearAuth } = useVaultStore();
+  const { user, files, isPremium, logout, clearAuth, freeStorageLimitGB } = useVaultStore();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
   const usedMB = (usedBytes / (1024 * 1024)).toFixed(1);
   const usedGB = (usedBytes / (1024 * 1024 * 1024)).toFixed(2);
-  const pct = isPremium ? 0 : Math.min(100, Math.round((usedBytes / FREE_STORAGE_LIMIT) * 100));
+  const freeLimitBytes = freeStorageLimitGB * 1024 * 1024 * 1024;
+  const pct = isPremium ? 0 : Math.min(100, Math.round((usedBytes / freeLimitBytes) * 100));
 
   const handleLogout = async () => {
     onClose();
@@ -186,7 +187,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose, onQ
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-gray-500">
                     <span>{usedGB} GB used</span>
-                    <span>5 GB free limit</span>
+                    <span>{freeStorageLimitGB} GB free limit</span>
                   </div>
                 </div>
               )}

@@ -28,7 +28,12 @@ import {
   Check,
   Layers,
   FileImage,
-  ScanLine
+  ScanLine,
+  FlipHorizontal,
+  Copy,
+  Pencil,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { useVaultStore } from '../../store/useVaultStore';
 import { useToast } from '../ui/Toast';
@@ -191,6 +196,7 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(110);
   const [rotation, setRotation] = useState(0);
+  const [flipH, setFlipH] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -203,6 +209,8 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
   const [quality, setQuality] = useState<'high' | 'medium' | 'low'>('high');
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [autoEnhancing, setAutoEnhancing] = useState(false);
+  const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
+  const [renameVal, setRenameVal] = useState('');
 
   /* Camera */
   const [cameraActive, setCameraActive] = useState(false);
@@ -378,6 +386,60 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
     const newRot = (rotation + 90) % 360;
     setRotation(newRot);
     if (step === 'enhance') reprocess(filter, brightness, contrast, newRot);
+  };
+
+  const handleFlipH = () => {
+    setFlipH(v => !v);
+  };
+
+  const handleCopyToClipboard = async () => {
+    const src = getDisplayImage();
+    if (!src) return;
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      toast({ title: 'Copied to Clipboard', description: 'Image copied — paste it anywhere.', type: 'success' });
+    } catch {
+      toast({ title: 'Copy failed', description: 'Your browser may not support clipboard image writing.', type: 'error' });
+    }
+  };
+
+  const handleShare = async () => {
+    const src = getDisplayImage();
+    if (!src) return;
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      const file = new File([blob], `${docName.trim() || 'Scan'}.jpg`, { type: 'image/jpeg' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: docName.trim() || 'Scanned Document' });
+      } else {
+        toast({ title: 'Share not supported', description: 'Use Download instead to save the image.', type: 'error' });
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') toast({ title: 'Share failed', type: 'error' });
+    }
+  };
+
+  const handleMovePage = (idx: number, dir: 'up' | 'down') => {
+    setPages(prev => {
+      const arr = [...prev];
+      const target = dir === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= arr.length) return arr;
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      return arr;
+    });
+  };
+
+  const handleRenamePage = (idx: number) => {
+    setPages(prev => {
+      const arr = [...prev];
+      arr[idx] = { ...arr[idx], name: renameVal.trim() || arr[idx].name };
+      return arr;
+    });
+    setRenamingIdx(null);
+    setRenameVal('');
   };
 
   const handleBrightnessChange = (val: number) => {
@@ -703,10 +765,39 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
                 </div>
               ) : displayImage ? (
                 <>
-                  <img src={displayImage} alt="Enhanced Scan" className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
+                  <img
+                    src={displayImage}
+                    alt="Enhanced Scan"
+                    className="max-h-full max-w-full object-contain rounded-lg shadow-2xl transition-all duration-300"
+                    style={{ transform: flipH ? 'scaleX(-1)' : undefined }}
+                  />
                   <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md border border-white/10 text-[10px] text-gray-300 uppercase tracking-wider">
                     <span className="text-white font-bold">{FILTERS.find(f => f.id === filter)?.icon} {filter}</span>
                     <span className="ml-1.5 text-emerald-400">· ✓</span>
+                    {flipH && <span className="ml-1.5 text-purple-400">· ↔ flipped</span>}
+                  </div>
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                    <button
+                      onClick={handleFlipH}
+                      title="Flip Horizontal"
+                      className={`p-2 rounded-lg backdrop-blur-md border transition-all ${flipH ? 'bg-purple-600/40 border-purple-500/40 text-purple-300' : 'bg-black/60 border-white/10 text-gray-400 hover:text-white'}`}
+                    >
+                      <FlipHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={handleCopyToClipboard}
+                      title="Copy to Clipboard"
+                      className="p-2 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-gray-400 hover:text-white transition-all"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={handleShare}
+                      title="Share"
+                      className="p-2 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-gray-400 hover:text-white transition-all"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </>
               ) : null}
@@ -1018,8 +1109,11 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
       <div className="grid grid-cols-3 gap-2">
         {[
           { icon: '✨', title: '8 Filters', desc: 'Magic, B&W, Sepia...' },
+          { icon: '↔', title: 'Flip & Rotate', desc: 'Mirror, rotate 90°' },
           { icon: '📄', title: 'PDF Export', desc: 'Print to PDF' },
-          { icon: '📚', title: 'Multi-Page', desc: 'Batch documents' },
+          { icon: '📋', title: 'Copy & Share', desc: 'Clipboard & share' },
+          { icon: '✏️', title: 'Rename Pages', desc: 'Custom page names' },
+          { icon: '📚', title: 'Reorder Pages', desc: 'Move up / down' },
         ].map(item => (
           <div key={item.title} className="glass-panel rounded-2xl p-3 border border-white/5 text-center">
             <div className="text-lg mb-1">{item.icon}</div>
@@ -1060,28 +1154,74 @@ export const MobileScanner: React.FC<MobileScannerProps> = ({ onScanComplete }) 
                 {pages.length === 0 ? (
                   <p className="text-center text-xs text-gray-500 py-8">No pages added yet.</p>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="space-y-2">
                     {pages.map((page, idx) => (
-                      <div key={page.id} className="relative group rounded-xl overflow-hidden border border-white/10 bg-black/30">
-                        <img src={page.dataUrl} alt={page.name} className="w-full aspect-[3/4] object-cover" />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
-                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-all">
-                            <button
-                              onClick={() => { setPreviewPageIdx(idx); }}
-                              className="p-2 rounded-lg bg-blue-600 text-white"
-                            >
-                              <ZoomIn className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeletePage(idx)}
-                              className="p-2 rounded-lg bg-rose-600 text-white"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                      <div key={page.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 p-2">
+                        {/* Thumbnail */}
+                        <div className="relative flex-shrink-0 w-14 h-[72px] rounded-lg overflow-hidden cursor-pointer" onClick={() => setPreviewPageIdx(idx)}>
+                          <img src={page.dataUrl} alt={page.name} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-all">
+                            <ZoomIn className="w-4 h-4 text-white opacity-0 hover:opacity-100" />
                           </div>
                         </div>
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1">
-                          <p className="text-[10px] text-white font-medium">Page {idx + 1}</p>
+
+                        {/* Name / rename */}
+                        <div className="flex-1 min-w-0">
+                          {renamingIdx === idx ? (
+                            <form
+                              onSubmit={e => { e.preventDefault(); handleRenamePage(idx); }}
+                              className="flex items-center gap-1"
+                            >
+                              <input
+                                autoFocus
+                                value={renameVal}
+                                onChange={e => setRenameVal(e.target.value)}
+                                className="flex-1 bg-white/10 text-white text-xs rounded-lg px-2 py-1 border border-blue-500/50 outline-none min-w-0"
+                                placeholder={page.name}
+                                onBlur={() => handleRenamePage(idx)}
+                              />
+                              <button type="submit" className="p-1 rounded-lg bg-blue-600 text-white">
+                                <Check className="w-3 h-3" />
+                              </button>
+                            </form>
+                          ) : (
+                            <button
+                              onClick={() => { setRenamingIdx(idx); setRenameVal(page.name); }}
+                              className="flex items-center gap-1 text-left group"
+                              title="Click to rename"
+                            >
+                              <p className="text-xs font-semibold text-white truncate">{page.name}</p>
+                              <Pencil className="w-2.5 h-2.5 text-gray-600 group-hover:text-gray-300 flex-shrink-0 transition-colors" />
+                            </button>
+                          )}
+                          <p className="text-[10px] text-gray-500 mt-0.5">Page {idx + 1} of {pages.length}</p>
+                        </div>
+
+                        {/* Actions: move up / down / delete */}
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            onClick={() => handleMovePage(idx, 'up')}
+                            disabled={idx === 0}
+                            className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 disabled:opacity-20 transition-all"
+                            title="Move up"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleMovePage(idx, 'down')}
+                            disabled={idx === pages.length - 1}
+                            className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 disabled:opacity-20 transition-all"
+                            title="Move down"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeletePage(idx)}
+                            className="p-1.5 rounded-lg text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+                            title="Delete page"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     ))}

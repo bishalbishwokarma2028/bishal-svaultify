@@ -30,7 +30,9 @@ export const Dashboard: React.FC = () => {
     activityLogs, 
     addFile, 
     createFolder,
-    isPremium
+    isPremium,
+    freeStorageLimitGB,
+    subscriptionPrice
   } = useVaultStore();
   
   const navigate = useNavigate();
@@ -49,7 +51,8 @@ export const Dashboard: React.FC = () => {
   const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
   const usedMB = (usedBytes / (1024 * 1024)).toFixed(2);
   const usedGB = (usedBytes / (1024 * 1024 * 1024)).toFixed(3);
-  const freePct = isPremium ? 0 : Math.min(100, Math.round((usedBytes / FREE_STORAGE_LIMIT) * 100));
+  const freeLimitBytes = freeStorageLimitGB * 1024 * 1024 * 1024;
+  const freePct = isPremium ? 0 : Math.min(100, Math.round((usedBytes / freeLimitBytes) * 100));
 
   const [animatedDocCount, setAnimatedDocCount] = useState(0);
   const [animatedPwdCount, setAnimatedPwdCount] = useState(0);
@@ -315,7 +318,7 @@ export const Dashboard: React.FC = () => {
                   <Crown className="w-3.5 h-3.5" /> Premium — Unlimited
                 </span>
               ) : (
-                <span className="text-xs font-semibold text-blue-400">{usedGB} GB / 5 GB</span>
+                <span className="text-xs font-semibold text-blue-400">{usedGB} GB / {freeStorageLimitGB} GB</span>
               )}
             </div>
 
@@ -338,7 +341,7 @@ export const Dashboard: React.FC = () => {
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-gray-500 font-medium">
                   <span>{freePct}% used ({usedMB} MB)</span>
-                  <span>5 GB free limit</span>
+                  <span>{freeStorageLimitGB} GB free limit</span>
                 </div>
                 {freePct > 80 && (
                   <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 flex items-center justify-between">

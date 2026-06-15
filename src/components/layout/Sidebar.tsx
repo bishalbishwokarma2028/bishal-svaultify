@@ -24,7 +24,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { user, files, isPremium } = useVaultStore();
+  const { user, files, isPremium, freeStorageLimitGB } = useVaultStore();
   const navigate = useNavigate();
 
   const navItems = [
@@ -42,8 +42,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onQuickUpload }) => {
   const usedBytes = files.reduce((sum, f) => sum + f.size, 0);
   const usedMB = (usedBytes / (1024 * 1024)).toFixed(1);
   const usedGB = (usedBytes / (1024 * 1024 * 1024)).toFixed(2);
-  const limitGB = 5;
-  const pct = isPremium ? 0 : Math.min(100, Math.round((usedBytes / FREE_STORAGE_LIMIT) * 100));
+  const limitGB = freeStorageLimitGB;
+  const freeLimitBytes = freeStorageLimitGB * 1024 * 1024 * 1024;
+  const pct = isPremium ? 0 : Math.min(100, Math.round((usedBytes / freeLimitBytes) * 100));
 
   return (
     <aside 

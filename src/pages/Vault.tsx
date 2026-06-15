@@ -265,7 +265,7 @@ export const Vault: React.FC = () => {
       setShowUploadModal(false);
     } catch (err: any) {
       if (err?.message === 'STORAGE_LIMIT_EXCEEDED') {
-        toast({ title: 'Storage Full', description: 'You have reached the 5 GB free limit. Upgrade to Premium for unlimited storage.', type: 'error' });
+        toast({ title: 'Storage Full', description: 'You have reached the free storage limit. Upgrade to Premium for unlimited storage.', type: 'error' });
       } else {
         toast({ title: 'Upload Failed', description: 'Could not save the file. Try a smaller file.', type: 'error' });
       }

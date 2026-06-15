@@ -315,7 +315,7 @@ export const HiddenVault: React.FC = () => {
       } catch (err: any) {
         setIsConverting(false);
         if (err?.message === 'STORAGE_LIMIT_EXCEEDED') {
-          toast({ title: 'Storage Full', description: 'You have reached the 5 GB free limit.', type: 'error' });
+          toast({ title: 'Storage Full', description: 'You have reached the free storage limit. Upgrade to Premium for unlimited storage.', type: 'error' });
         } else {
           toast({ title: `Could not add "${file.name}"`, description: 'File may be corrupted or too large for this device.', type: 'error' });
         }
