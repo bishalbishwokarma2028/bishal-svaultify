@@ -142,7 +142,7 @@ const useReminderNotifications = (isAuthenticated: boolean) => {
 };
 
 export const App: React.FC = () => {
-  const { isAuthenticated, login, clearAuth, theme, syncPremiumFromGlobal, syncFromSupabase } = useVaultStore();
+  const { isAuthenticated, login, clearAuth, theme, syncPremiumFromGlobal, syncFromSupabase, refreshAdminSettings } = useVaultStore();
   useReminderNotifications(isAuthenticated);
 
   useEffect(() => {
@@ -219,6 +219,14 @@ export const App: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
+
+  // Periodically re-sync admin settings (price, storage, access) so changes
+  // made in the admin panel propagate to all devices within ~60 seconds.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const id = setInterval(() => { refreshAdminSettings(); }, 60_000);
+    return () => clearInterval(id);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

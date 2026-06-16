@@ -5,7 +5,7 @@ import { ShieldCheck, Lock, Mail, Key, ArrowRight, Eye, EyeOff } from 'lucide-re
 import { supabase } from '../lib/supabase';
 import { useVaultStore } from '../store/useVaultStore';
 import { useToast } from '../components/ui/Toast';
-import { registerUser, setAdminSession } from '../lib/premiumRequests';
+import { registerUser, setAdminSession, syncUserToCloud } from '../lib/premiumRequests';
 
 export const Auth: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
@@ -74,6 +74,7 @@ export const Auth: React.FC = () => {
           };
           login(profile);
           registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
+          syncUserToCloud({ id: data.user.id, email: data.user.email!, fullName: profile.fullName }).catch(() => {});
           toast({ title: 'Account Created!', description: 'Welcome to your secure vault.', type: 'success' });
           navigate('/dashboard');
         } else if (data.user && !data.session) {
@@ -93,6 +94,7 @@ export const Auth: React.FC = () => {
           };
           login(profile);
           registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
+          syncUserToCloud({ id: data.user.id, email: data.user.email!, fullName: profile.fullName }).catch(() => {});
           toast({ title: 'Welcome back!', description: 'Your vault is ready.', type: 'success' });
           navigate('/dashboard');
         }

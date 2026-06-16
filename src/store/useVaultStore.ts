@@ -90,6 +90,7 @@ interface VaultStore {
   createSharedLink: (link: Omit<SharedLink, 'id' | 'createdAt' | 'downloadsCount'>) => Promise<void>;
 
   syncFromSupabase: () => Promise<boolean>;
+  refreshAdminSettings: () => Promise<void>;
   backupData: () => Promise<void>;
   restoreData: (backupJson: string) => Promise<{ success: boolean; message: string; restored: number }>;
 }
@@ -134,14 +135,14 @@ export const useVaultStore = create<VaultStore>()(
                 const resized = await new Promise<string>((resolve) => {
                   const img = new Image();
                   img.onload = () => {
-                    const MAX = 800;
+                    const MAX = 400;
                     let w = img.naturalWidth, h = img.naturalHeight;
                     const scale = Math.min(1, MAX / Math.max(w, h));
                     w = Math.round(w * scale); h = Math.round(h * scale);
                     const canvas = document.createElement('canvas');
                     canvas.width = w; canvas.height = h;
                     canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-                    resolve(canvas.toDataURL('image/jpeg', 0.72));
+                    resolve(canvas.toDataURL('image/jpeg', 0.55));
                   };
                   img.onerror = () => resolve(screenshot);
                   img.src = screenshot;
@@ -999,6 +1000,40 @@ export const useVaultStore = create<VaultStore>()(
           console.error('syncFromSupabase error:', err);
           return false;
         }
+      },
+
+      refreshAdminSettings: async () => {
+        try {
+          const cloudCfg = await fetchAdminSettingsFromCloud();
+          if (!cloudCfg) return;
+          if (cloudCfg.subscriptionPrice > 0) {
+            localStorage.setItem('vaultify-subscription-price', String(cloudCfg.subscriptionPrice));
+            set({ subscriptionPrice: cloudCfg.subscriptionPrice });
+          }
+          if (Array.isArray(cloudCfg.approvedEmails)) {
+            localStorage.setItem('vaultify-premium-approved', JSON.stringify(cloudCfg.approvedEmails));
+          }
+          if (cloudCfg.planAccess && typeof cloudCfg.planAccess === 'object') {
+            localStorage.setItem('vaultify-plan-access', JSON.stringify(cloudCfg.planAccess));
+            set({ planAccess: cloudCfg.planAccess });
+          }
+          if (cloudCfg.freeStorageLimitGB > 0) {
+            localStorage.setItem('vaultify-admin-free-limit-gb', String(cloudCfg.freeStorageLimitGB));
+            set({ freeStorageLimitGB: cloudCfg.freeStorageLimitGB });
+          }
+          if (typeof cloudCfg.announcement === 'string') {
+            localStorage.setItem('vaultify-admin-announcement', cloudCfg.announcement);
+          }
+          const user = get().user;
+          if (user && Array.isArray(cloudCfg.approvedEmails)) {
+            const approvedSet = new Set(cloudCfg.approvedEmails.map((e: string) => e.toLowerCase().trim()));
+            if (approvedSet.has(user.email.toLowerCase().trim())) {
+              set({ isPremium: true, paymentStatus: 'approved' });
+            } else if (get().paymentStatus === 'approved') {
+              set({ isPremium: false, paymentStatus: 'none' });
+            }
+          }
+        } catch { /* ignore — use cached values */ }
       },
 
       backupData: async () => {

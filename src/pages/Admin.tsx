@@ -46,6 +46,7 @@ import {
   pushAdminSettingsToCloud,
   fetchTxScreenshots,
   deleteTxScreenshot,
+  fetchCloudUsersRegistry,
   PremiumRequest,
   RegisteredUser,
   TxScreenshot,
@@ -109,8 +110,13 @@ export const Admin: React.FC = () => {
   // Transaction Screenshots state
   const [txScreenshots, setTxScreenshots] = useState<TxScreenshot[]>([]);
   const [screenshotsLoading, setScreenshotsLoading] = useState(false);
+  const [screenshotsError, setScreenshotsError] = useState<string | null>(null);
   const [viewingScreenshot, setViewingScreenshot] = useState<TxScreenshot | null>(null);
   const [deletingScreenshotId, setDeletingScreenshotId] = useState<string | null>(null);
+
+  // Cloud user registry state
+  const [cloudUsers, setCloudUsers] = useState<RegisteredUser[]>([]);
+  const [cloudUsersLoading, setCloudUsersLoading] = useState(false);
 
   // Plan access control state
   const PLAN_SECTIONS = [
@@ -170,11 +176,24 @@ export const Admin: React.FC = () => {
 
   const loadTxScreenshots = async () => {
     setScreenshotsLoading(true);
+    setScreenshotsError(null);
     try {
       const data = await fetchTxScreenshots();
       setTxScreenshots(data.sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()));
+    } catch (e: any) {
+      setScreenshotsError(e?.message || 'Failed to load screenshots from cloud.');
     } finally {
       setScreenshotsLoading(false);
+    }
+  };
+
+  const loadCloudUsers = async () => {
+    setCloudUsersLoading(true);
+    try {
+      const data = await fetchCloudUsersRegistry();
+      setCloudUsers(data);
+    } finally {
+      setCloudUsersLoading(false);
     }
   };
 
@@ -212,6 +231,7 @@ export const Admin: React.FC = () => {
 
   useEffect(() => {
     if (activeTab === 'screenshots' && isLoggedIn) { loadTxScreenshots(); }
+    if (activeTab === 'users' && isLoggedIn) { loadCloudUsers(); }
   }, [activeTab]);
 
   useEffect(() => {
@@ -339,13 +359,28 @@ export const Admin: React.FC = () => {
 
   const approvedSet = new Set(approvedEmails.map(e => e.toLowerCase()));
 
-  const filteredUsers = registeredUsers.filter(u =>
+  // Merge cloud users (all devices) with local registered users (this device), dedup by email
+  const allUsers: RegisteredUser[] = React.useMemo(() => {
+    const emailMap = new Map<string, RegisteredUser>();
+    cloudUsers.forEach(u => emailMap.set(u.email.toLowerCase(), u));
+    registeredUsers.forEach(u => {
+      const existing = emailMap.get(u.email.toLowerCase());
+      if (!existing || new Date(u.lastSignInAt) >= new Date(existing.lastSignInAt)) {
+        emailMap.set(u.email.toLowerCase(), u);
+      }
+    });
+    return Array.from(emailMap.values()).sort(
+      (a, b) => new Date(b.lastSignInAt).getTime() - new Date(a.lastSignInAt).getTime()
+    );
+  }, [registeredUsers, cloudUsers]);
+
+  const filteredUsers = allUsers.filter(u =>
     userSearch ? u.email.toLowerCase().includes(userSearch.toLowerCase()) || u.fullName.toLowerCase().includes(userSearch.toLowerCase()) : true
   );
 
   const TABS: { id: AdminTab; label: string; icon: React.ElementType; badge?: number }[] = [
     { id: 'requests', label: 'Requests', icon: Crown, badge: counts.pending },
-    { id: 'users', label: 'All Users', icon: Users, badge: registeredUsers.length },
+    { id: 'users', label: 'All Users', icon: Users, badge: allUsers.length || undefined },
     { id: 'messages', label: 'Messages', icon: MessageSquare, badge: messagesUnread },
     { id: 'screenshots', label: 'Screenshots', icon: ImageIcon, badge: txScreenshots.length || undefined },
     { id: 'stats', label: 'Statistics', icon: BarChart3 },
@@ -719,7 +754,8 @@ export const Admin: React.FC = () => {
               <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between gap-3 flex-wrap">
                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
                   <Users className="w-4 h-4 text-blue-400" />
-                  All Registered Users ({registeredUsers.length})
+                  All Registered Users ({allUsers.length})
+                  {cloudUsersLoading && <span className="text-[10px] text-gray-500 font-normal animate-pulse">syncing cloud…</span>}
                 </h2>
                 <input
                   type="text"
@@ -734,8 +770,8 @@ export const Admin: React.FC = () => {
                 <div className="p-12 text-center">
                   <Users className="w-8 h-8 text-gray-700 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">
-                    {registeredUsers.length === 0
-                      ? 'No users have signed in yet. Users appear here when they sign in to the app.'
+                    {allUsers.length === 0
+                      ? 'No users yet. Users appear here when they sign in on any device.'
                       : 'No users match your search.'}
                   </p>
                 </div>
@@ -1143,6 +1179,15 @@ export const Admin: React.FC = () => {
             {screenshotsLoading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : screenshotsError ? (
+              <div className="py-12 text-center rounded-3xl bg-rose-950/30 border border-rose-500/20">
+                <AlertCircle className="w-8 h-8 text-rose-400 mx-auto mb-3" />
+                <p className="text-sm text-rose-300">Could not load screenshots from cloud.</p>
+                <p className="text-xs text-gray-500 mt-1">{screenshotsError}</p>
+                <button onClick={loadTxScreenshots} className="mt-4 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-bold hover:bg-rose-500/20 transition-all">
+                  Retry
+                </button>
               </div>
             ) : txScreenshots.length === 0 ? (
               <div className="py-16 text-center rounded-3xl bg-slate-900/60 border border-white/10">

@@ -204,11 +204,12 @@ const _readTxScreenshots = async (): Promise<TxScreenshot[]> => {
 const _writeTxScreenshots = async (screenshots: TxScreenshot[]): Promise<void> => {
   try {
     const client = await makeTempClient();
-    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
-    if (error) return;
-    await client.auth.updateUser({ data: { txscr_data: JSON.stringify(screenshots) } });
+    const { error: signInErr } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
+    if (signInErr) { console.warn('[txscr] admin sign-in failed:', signInErr.message); return; }
+    const { error } = await client.auth.updateUser({ data: { txscr_data: JSON.stringify(screenshots) } });
+    if (error) console.warn('[txscr] write failed:', error.message);
     await client.auth.signOut();
-  } catch { /* ignore */ }
+  } catch (e) { console.warn('[txscr] write error:', e); }
 };
 
 /** User calls this on payment submit — adds or replaces their entry in the cloud queue. */
@@ -228,4 +229,52 @@ export const fetchTxScreenshots = async (): Promise<TxScreenshot[]> => {
 export const deleteTxScreenshot = async (id: string): Promise<void> => {
   const existing = await _readTxScreenshots();
   await _writeTxScreenshots(existing.filter(e => e.id !== id));
+};
+
+// ── Cloud User Registry ───────────────────────────────────────────────────────
+// When a user signs in on any device they call syncUserToCloud which upserts
+// their entry in the admin account's users_registry metadata key. The admin
+// fetches all registered users across all devices with fetchCloudUsersRegistry.
+
+/** Called on every sign-in to register the user in the cloud admin registry. */
+export const syncUserToCloud = async (user: { id: string; email: string; fullName: string }): Promise<void> => {
+  try {
+    const client = await makeTempClient();
+    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
+    if (error) return;
+    const { data: { user: adminUser } } = await client.auth.getUser();
+
+    const lowerEmail = user.email.toLowerCase().trim();
+    const now = new Date().toISOString();
+
+    let existing: RegisteredUser[] = [];
+    try {
+      const raw = adminUser?.user_metadata?.users_registry;
+      if (raw) existing = JSON.parse(raw);
+    } catch { /* start fresh */ }
+
+    const idx = existing.findIndex(u => u.email === lowerEmail);
+    if (idx >= 0) {
+      existing[idx] = { ...existing[idx], lastSignInAt: now, fullName: user.fullName || existing[idx].fullName };
+    } else {
+      existing.push({ id: user.id, email: lowerEmail, fullName: user.fullName, registeredAt: now, lastSignInAt: now });
+    }
+
+    await client.auth.updateUser({ data: { users_registry: JSON.stringify(existing) } });
+    await client.auth.signOut();
+  } catch { /* ignore — non-fatal */ }
+};
+
+/** Admin calls this to retrieve all users who have ever signed in from any device. */
+export const fetchCloudUsersRegistry = async (): Promise<RegisteredUser[]> => {
+  try {
+    const client = await makeTempClient();
+    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
+    if (error) return [];
+    const { data: { user } } = await client.auth.getUser();
+    await client.auth.signOut();
+    const raw = user?.user_metadata?.users_registry;
+    if (!raw) return [];
+    return JSON.parse(raw) as RegisteredUser[];
+  } catch { return []; }
 };
