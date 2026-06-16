@@ -47,6 +47,8 @@ import {
   fetchTxScreenshots,
   deleteTxScreenshot,
   fetchCloudUsersRegistry,
+  fetchPremiumRequestsFromCloud,
+  updateCloudRequestStatus,
   PremiumRequest,
   RegisteredUser,
   TxScreenshot,
@@ -83,6 +85,8 @@ export const Admin: React.FC = () => {
     localStorage.setItem('vaultify-admin-theme', next);
   };
   const [requests, setRequests] = useState<PremiumRequest[]>([]);
+  const [cloudRequests, setCloudRequests] = useState<PremiumRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
   const [approvedEmails, setApprovedEmails] = useState<string[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
   const [actionMsg, setActionMsg] = useState('');
@@ -163,10 +167,20 @@ export const Admin: React.FC = () => {
     });
   };
 
-  const loadData = () => {
+  const loadData = async () => {
     setRequests(getAllRequests());
     setApprovedEmails(getApprovedEmails());
     setRegisteredUsers(getUsersRegistry());
+    // Fetch cloud requests (from all user devices)
+    setRequestsLoading(true);
+    try {
+      const cloud = await fetchPremiumRequestsFromCloud();
+      setCloudRequests(cloud);
+    } catch {
+      /* non-fatal */
+    } finally {
+      setRequestsLoading(false);
+    }
   };
 
   const loadMessages = () => {
@@ -211,7 +225,7 @@ export const Admin: React.FC = () => {
 
   useEffect(() => {
     if (isLoggedIn) { loadData(); loadMessages(); }
-  }, [isLoggedIn]);
+  }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -285,6 +299,9 @@ export const Admin: React.FC = () => {
     loadData();
     flash(`Premium approved for ${req.email}`);
     pushAllToCloud();
+    updateCloudRequestStatus(req.id, 'approved');
+    // Optimistically update cloud requests state so UI reflects immediately
+    setCloudRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' as const, reviewedAt: new Date().toISOString() } : r));
   };
 
   const handleReject = (req: PremiumRequest) => {
@@ -293,6 +310,9 @@ export const Admin: React.FC = () => {
     loadData();
     flash(`Request rejected for ${req.email}`);
     pushAllToCloud();
+    updateCloudRequestStatus(req.id, 'rejected');
+    // Optimistically update cloud requests state so UI reflects immediately
+    setCloudRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'rejected' as const, reviewedAt: new Date().toISOString() } : r));
   };
 
   const handleManualAdd = () => {
@@ -346,15 +366,28 @@ export const Admin: React.FC = () => {
     setTimeout(() => setActionMsg(''), 4000);
   };
 
-  const filtered = requests.filter(r =>
+  // Merge cloud requests (authoritative) with local localStorage requests (fallback for legacy).
+  // Cloud takes priority — if the same email appears in both, the cloud version wins.
+  const allRequests: PremiumRequest[] = React.useMemo(() => {
+    const idMap = new Map<string, PremiumRequest>();
+    // Local first (may have old requests not yet in cloud)
+    requests.forEach(r => idMap.set(r.id, r));
+    // Cloud overrides — these come from users on any device
+    cloudRequests.forEach(r => idMap.set(r.id, r));
+    return Array.from(idMap.values()).sort(
+      (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+    );
+  }, [requests, cloudRequests]);
+
+  const filtered = allRequests.filter(r =>
     filterStatus === 'all' ? true : r.status === filterStatus
   );
 
   const counts = {
-    all: requests.length,
-    pending: requests.filter(r => r.status === 'pending').length,
-    approved: requests.filter(r => r.status === 'approved').length,
-    rejected: requests.filter(r => r.status === 'rejected').length,
+    all: allRequests.length,
+    pending: allRequests.filter(r => r.status === 'pending').length,
+    approved: allRequests.filter(r => r.status === 'approved').length,
+    rejected: allRequests.filter(r => r.status === 'rejected').length,
   };
 
   const approvedSet = new Set(approvedEmails.map(e => e.toLowerCase()));
@@ -563,6 +596,24 @@ export const Admin: React.FC = () => {
         {/* ── REQUESTS TAB ── */}
         {activeTab === 'requests' && (
           <>
+            {/* Cloud sync status bar */}
+            <div className={`flex items-center justify-between px-4 py-2.5 rounded-2xl text-xs font-medium ${
+              adminTheme === 'light' ? 'bg-blue-50 border border-blue-200 text-blue-700' : 'bg-blue-500/8 border border-blue-500/20 text-blue-400'
+            }`}>
+              <span className="flex items-center gap-2">
+                {requestsLoading
+                  ? <><div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin" /> Loading requests from cloud…</>
+                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Showing {allRequests.length} request{allRequests.length !== 1 ? 's' : ''} from all devices</>
+                }
+              </span>
+              <button
+                onClick={() => loadData()}
+                className="flex items-center gap-1.5 opacity-70 hover:opacity-100 transition-opacity"
+              >
+                <RefreshCw className="w-3 h-3" /> Refresh
+              </button>
+            </div>
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
               {[
                 { label: 'Total Requests', value: counts.all, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', icon: Users },
@@ -604,7 +655,9 @@ export const Admin: React.FC = () => {
                 <div className="p-16 text-center">
                   <Crown className="w-10 h-10 text-gray-700 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No payment requests found.</p>
-                  <p className="text-xs text-gray-600 mt-1">Users who submit a transaction ID will appear here.</p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {requestsLoading ? 'Loading from cloud…' : 'Requests from users on any device will appear here once they submit a payment.'}
+                  </p>
                 </div>
               ) : (
                 <div className="divide-y divide-white/5">

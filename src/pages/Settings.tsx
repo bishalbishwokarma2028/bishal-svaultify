@@ -613,6 +613,37 @@ export const Settings: React.FC = () => {
           {/* STORAGE & PLANS */}
           {activeSection === 'storage' && (
             <div className="space-y-4">
+              {/* Cloud Storage Info Card */}
+              <div className="rounded-3xl p-5 border border-blue-500/20 bg-blue-500/[0.04] space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-blue-500/15 text-blue-400">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Cloud Storage — Powered by Supabase</h3>
+                    <p className="text-[11px] text-gray-400 mt-0.5">All your data is encrypted and stored on Supabase (supabase.com)</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    { label: 'Passwords, Notes', detail: 'Stored in Supabase Database', size: 'Unlimited rows', color: 'text-emerald-400', bg: 'bg-emerald-500/8 border-emerald-500/15' },
+                    { label: 'Files ≤ 20 MB', detail: 'Stored as data inside the Database', size: 'Up to 500 MB free', color: 'text-blue-400', bg: 'bg-blue-500/8 border-blue-500/15' },
+                    { label: 'Files > 20 MB', detail: 'Stored in Supabase Storage bucket', size: 'Up to 1 GB free', color: 'text-indigo-400', bg: 'bg-indigo-500/8 border-indigo-500/15' },
+                  ].map(item => (
+                    <div key={item.label} className={`p-3 rounded-xl border ${item.bg} space-y-0.5`}>
+                      <p className={`text-[11px] font-bold ${item.color}`}>{item.label}</p>
+                      <p className="text-[10px] text-gray-400">{item.detail}</p>
+                      <p className="text-[10px] text-gray-500">{item.size}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-2.5 rounded-xl bg-amber-500/[0.06] border border-amber-500/15">
+                  <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                    <strong className="text-amber-300">For files larger than 20 MB</strong> to sync across devices, the Supabase Storage bucket (<code className="text-xs font-mono bg-black/20 px-1 rounded">vault-files</code>) must be created in the Supabase Dashboard. Without it, large files remain on this device only. See the <code className="text-xs font-mono bg-black/20 px-1 rounded">supabase-schema.sql</code> file for setup instructions.
+                  </p>
+                </div>
+              </div>
+
               {/* Current Plan Card */}
               <div className={`rounded-3xl p-6 border ${isPremium ? 'bg-gradient-to-br from-amber-950/40 to-slate-900 border-amber-500/30' : 'glass-panel-premium border-white/10'}`}>
                 <div className="flex items-center justify-between mb-4">

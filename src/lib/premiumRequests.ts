@@ -302,3 +302,69 @@ export const fetchCloudUsersRegistry = async (): Promise<RegisteredUser[]> => {
     return [];
   }
 };
+
+// ── Cloud Premium Requests ─────────────────────────────────────────────────────
+// Stored in the premium_requests Supabase table so the admin can see all
+// payment requests from all devices, not just the one they submitted from.
+// Public SELECT + UPDATE so the admin panel (no Supabase auth) can read and
+// update status. Authenticated INSERT restricted to own row.
+
+export const savePremiumRequestToCloud = async (req: PremiumRequest): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('premium_requests')
+      .upsert(
+        {
+          id: req.id,
+          user_id: req.userId,
+          email: req.email.toLowerCase(),
+          transaction_id: req.transactionId,
+          screenshot_base64: req.screenshotBase64 || null,
+          status: req.status,
+          submitted_at: req.submittedAt,
+          reviewed_at: req.reviewedAt || null,
+        },
+        { onConflict: 'id' }
+      );
+    if (error) console.warn('[premium_requests] save failed:', error.message);
+  } catch (e) {
+    console.warn('[premium_requests] save error:', e);
+  }
+};
+
+export const fetchPremiumRequestsFromCloud = async (): Promise<PremiumRequest[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('premium_requests')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(r => ({
+      id: r.id,
+      email: r.email,
+      userId: r.user_id,
+      transactionId: r.transaction_id || '',
+      screenshotBase64: r.screenshot_base64 || undefined,
+      status: r.status as 'pending' | 'approved' | 'rejected',
+      submittedAt: r.submitted_at,
+      reviewedAt: r.reviewed_at || undefined,
+    }));
+  } catch {
+    return [];
+  }
+};
+
+export const updateCloudRequestStatus = async (
+  id: string,
+  status: 'approved' | 'rejected'
+): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('premium_requests')
+      .update({ status, reviewed_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) console.warn('[premium_requests] status update failed:', error.message);
+  } catch (e) {
+    console.warn('[premium_requests] status update error:', e);
+  }
+};

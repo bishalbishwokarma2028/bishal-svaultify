@@ -215,4 +215,49 @@ CREATE POLICY "Auth users insert own screenshots" ON public.payment_screenshots
 CREATE POLICY "Public delete payment screenshots" ON public.payment_screenshots
     FOR DELETE TO anon, authenticated USING (true);
 
-DO $$ BEGIN RAISE NOTICE 'Vaultify schema (v2) created successfully with RLS enabled!'; END $$;
+-- 13. Premium Requests (submitted by users from any device, reviewed by admin)
+-- Public SELECT so admin panel (no Supabase auth) can see all requests.
+-- Authenticated INSERT restricted to own row.
+-- Public UPDATE so admin (no Supabase auth) can approve/reject.
+CREATE TABLE IF NOT EXISTS public.premium_requests (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    email TEXT NOT NULL,
+    transaction_id TEXT DEFAULT '',
+    screenshot_base64 TEXT,
+    status TEXT DEFAULT 'pending',
+    submitted_at TIMESTAMPTZ DEFAULT now(),
+    reviewed_at TIMESTAMPTZ
+);
+ALTER TABLE public.premium_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read premium requests" ON public.premium_requests;
+DROP POLICY IF EXISTS "Auth users insert own requests" ON public.premium_requests;
+DROP POLICY IF EXISTS "Public update premium requests" ON public.premium_requests;
+DROP POLICY IF EXISTS "Public delete premium requests" ON public.premium_requests;
+CREATE POLICY "Public read premium requests" ON public.premium_requests
+    FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Auth users insert own requests" ON public.premium_requests
+    FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Public update premium requests" ON public.premium_requests
+    FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Public delete premium requests" ON public.premium_requests
+    FOR DELETE TO anon, authenticated USING (true);
+
+-- ── Supabase Storage: vault-files bucket ──────────────────────────────────────
+-- Run this in the Supabase SQL Editor to create the storage bucket for files
+-- larger than 20 MB. Without this bucket, files >20 MB are local-only.
+--
+-- NOTE: Storage buckets cannot be created via SQL. You must create the bucket
+-- manually in the Supabase Dashboard:
+--   Dashboard → Storage → New Bucket → Name: vault-files → Public: ON
+--   → Additional Settings → Max file size: 5000 MB (or higher for large files)
+--
+-- After creating the bucket, add this RLS policy via Dashboard → Storage →
+-- vault-files → Policies → New Policy → For full customization:
+--   Policy name: "Auth users manage own files"
+--   Allowed operations: SELECT, INSERT, UPDATE, DELETE
+--   Target roles: authenticated
+--   USING: (auth.uid()::text = (storage.foldername(name))[1])
+--   WITH CHECK: (auth.uid()::text = (storage.foldername(name))[1])
+
+DO $$ BEGIN RAISE NOTICE 'Vaultify schema (v3) created successfully with RLS enabled!'; END $$;

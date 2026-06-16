@@ -14,7 +14,7 @@ import {
 } from '../types';
 import { supabase } from '../lib/supabase';
 import { idbStorage, storeFileContent, getFileContent, deleteFileContent, LOCAL_FILE_PREFIX, isLocalFileUrl, getFileIdFromUrl } from '../lib/localDB';
-import { saveRequest, isEmailApproved, fetchAdminSettingsFromCloud, submitTxScreenshot } from '../lib/premiumRequests';
+import { saveRequest, isEmailApproved, fetchAdminSettingsFromCloud, submitTxScreenshot, savePremiumRequestToCloud } from '../lib/premiumRequests';
 
 export const FREE_STORAGE_LIMIT = 5 * 1024 * 1024 * 1024; // 5 GB default
 export const getFreeStorageLimit = (): number => {
@@ -125,31 +125,36 @@ export const useVaultStore = create<VaultStore>()(
         const user = get().user;
         const txId = 'SCR-' + Date.now();
         if (user) {
-          saveRequest({
-            id: genId(),
+          const reqId = genId();
+          const req = {
+            id: reqId,
             email: user.email,
             userId: user.id,
             transactionId: txId,
             screenshotBase64: screenshot,
-            status: 'pending',
+            status: 'pending' as const,
             submittedAt: new Date().toISOString(),
-          });
+          };
+          saveRequest(req);
 
-          // Fire-and-forget: resize screenshot and upload to cloud admin metadata
-          if (screenshot) {
-            (async () => {
-              try {
-                const resized = await new Promise<string>((resolve) => {
+          // Fire-and-forget: resize screenshot, upload to cloud payment_screenshots
+          // table AND save the full request to cloud premium_requests table so
+          // admin can see it from any device.
+          (async () => {
+            try {
+              let resized = screenshot || '';
+              if (screenshot) {
+                resized = await new Promise<string>((resolve) => {
                   const img = new Image();
                   img.onload = () => {
-                    const MAX = 400;
+                    const MAX = 800;
                     let w = img.naturalWidth, h = img.naturalHeight;
                     const scale = Math.min(1, MAX / Math.max(w, h));
                     w = Math.round(w * scale); h = Math.round(h * scale);
                     const canvas = document.createElement('canvas');
                     canvas.width = w; canvas.height = h;
                     canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-                    resolve(canvas.toDataURL('image/jpeg', 0.55));
+                    resolve(canvas.toDataURL('image/jpeg', 0.7));
                   };
                   img.onerror = () => resolve(screenshot);
                   img.src = screenshot;
@@ -162,9 +167,14 @@ export const useVaultStore = create<VaultStore>()(
                   screenshot_data: resized,
                   submitted_at: new Date().toISOString(),
                 });
-              } catch { /* cloud upload failure is non-fatal */ }
-            })();
-          }
+              }
+              // Save the premium request to cloud (with resized screenshot)
+              await savePremiumRequestToCloud({
+                ...req,
+                screenshotBase64: resized || undefined,
+              });
+            } catch { /* cloud upload failure is non-fatal */ }
+          })();
         }
         set({ paymentStatus: 'pending', premiumTransactionId: txId, premiumScreenshot: screenshot || '' });
       },
@@ -1286,16 +1296,32 @@ export const useVaultStore = create<VaultStore>()(
           reminders: state.reminders,
         };
 
-        const json = JSON.stringify(backup);
+        const json = JSON.stringify(backup, null, 0);
         const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `vaultify-backup-${new Date().toISOString().slice(0, 10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const filename = `vaultify-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+        // Cross-browser / PWA-safe download trigger
+        if (typeof window !== 'undefined' && window.navigator && (window.navigator as any).msSaveOrOpenBlob) {
+          // IE / Edge legacy
+          (window.navigator as any).msSaveOrOpenBlob(blob, filename);
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.rel = 'noopener';
+          a.style.position = 'fixed';
+          a.style.top = '-9999px';
+          a.style.left = '-9999px';
+          document.body.appendChild(a);
+          // dispatchEvent is more reliable than .click() in async callbacks
+          a.dispatchEvent(new MouseEvent('click', { bubbles: false, cancelable: true, view: window }));
+          // Delay removal so the browser has time to start the download
+          setTimeout(() => {
+            try { document.body.removeChild(a); } catch { /* already removed */ }
+            URL.revokeObjectURL(url);
+          }, 300);
+        }
       },
 
       restoreData: async (backupJson: string) => {
