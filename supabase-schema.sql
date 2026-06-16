@@ -151,4 +151,65 @@ DROP POLICY IF EXISTS "Users manage own shared_links" ON public.shared_links;
 CREATE POLICY "Users manage own shared_links" ON public.shared_links
     USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+-- 10. Admin Config (global settings synced to every user device)
+-- Readable and writable by any client (anon or authenticated) so that:
+--   • every user always gets the latest price/storage/plan settings, and
+--   • the admin (who does NOT sign into Supabase) can push updates without auth.
+CREATE TABLE IF NOT EXISTS public.admin_config (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    subscription_price INTEGER DEFAULT 300,
+    free_storage_limit_gb INTEGER DEFAULT 5,
+    plan_access JSONB DEFAULT '{}',
+    approved_emails TEXT[] DEFAULT '{}',
+    announcement TEXT DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.admin_config ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read admin config" ON public.admin_config;
+DROP POLICY IF EXISTS "Public write admin config" ON public.admin_config;
+CREATE POLICY "Public read admin config" ON public.admin_config
+    FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Public write admin config" ON public.admin_config
+    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+INSERT INTO public.admin_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- 11. User Profiles (auto-registered on every signup / signin from any device)
+-- Readable by anon so admin panel (no Supabase auth) can see all users.
+CREATE TABLE IF NOT EXISTS public.user_profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    full_name TEXT DEFAULT '',
+    registered_at TIMESTAMPTZ DEFAULT now(),
+    last_sign_in_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read user profiles" ON public.user_profiles;
+DROP POLICY IF EXISTS "Auth users manage own profile" ON public.user_profiles;
+CREATE POLICY "Public read user profiles" ON public.user_profiles
+    FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Auth users manage own profile" ON public.user_profiles
+    FOR ALL TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+
+-- 12. Payment Screenshots (submitted by users, reviewed / deleted by admin)
+-- base64 data URL stored in screenshot_data column.
+-- Readable + deletable by anon so admin panel can fetch & remove without Supabase auth.
+CREATE TABLE IF NOT EXISTS public.payment_screenshots (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_email TEXT NOT NULL,
+    transaction_id TEXT DEFAULT '',
+    screenshot_data TEXT NOT NULL,
+    submitted_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.payment_screenshots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read payment screenshots" ON public.payment_screenshots;
+DROP POLICY IF EXISTS "Auth users insert own screenshots" ON public.payment_screenshots;
+DROP POLICY IF EXISTS "Public delete payment screenshots" ON public.payment_screenshots;
+CREATE POLICY "Public read payment screenshots" ON public.payment_screenshots
+    FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "Auth users insert own screenshots" ON public.payment_screenshots
+    FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Public delete payment screenshots" ON public.payment_screenshots
+    FOR DELETE TO anon, authenticated USING (true);
+
 DO $$ BEGIN RAISE NOTICE 'Vaultify schema (v2) created successfully with RLS enabled!'; END $$;

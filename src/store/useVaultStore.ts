@@ -152,7 +152,7 @@ export const useVaultStore = create<VaultStore>()(
                   user_email: user.email,
                   user_id: user.id,
                   transaction_id: txId,
-                  screenshot_b64: resized,
+                  screenshot_data: resized,
                   submitted_at: new Date().toISOString(),
                 });
               } catch { /* cloud upload failure is non-fatal */ }

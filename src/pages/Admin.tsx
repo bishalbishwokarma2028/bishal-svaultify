@@ -1163,7 +1163,7 @@ export const Admin: React.FC = () => {
                   Transaction Screenshots
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Payment screenshots submitted by users · stored in private cloud metadata, not Supabase Storage
+                  Payment screenshots submitted by users · stored in Supabase (payment_screenshots table)
                 </p>
               </div>
               <button
@@ -1207,7 +1207,7 @@ export const Admin: React.FC = () => {
                       onClick={() => setViewingScreenshot(scr)}
                     >
                       <img
-                        src={scr.screenshot_b64}
+                        src={scr.screenshot_data}
                         alt="Transaction screenshot"
                         className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                       />
@@ -1254,8 +1254,8 @@ export const Admin: React.FC = () => {
             )}
 
             <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/15 text-[11px] text-blue-300/70">
-              💡 Screenshots are stored in private cloud metadata — not in Supabase Storage. Deleting here permanently removes
-              the screenshot from the cloud but does <strong>not</strong> affect the payment request status in the Requests tab.
+              💡 Screenshots are stored in your Supabase database (payment_screenshots table). Deleting here permanently removes
+              the screenshot but does <strong>not</strong> affect the payment request status in the Requests tab.
             </div>
           </div>
         )}
@@ -1391,7 +1391,7 @@ export const Admin: React.FC = () => {
             </div>
             <div className="overflow-auto flex-1 flex items-center justify-center p-4 bg-slate-950/50">
               <img
-                src={viewingScreenshot.screenshot_b64}
+                src={viewingScreenshot.screenshot_data}
                 alt="Transaction screenshot"
                 className="max-w-full h-auto rounded-xl object-contain shadow-xl"
                 style={{ maxHeight: 'calc(90vh - 100px)' }}

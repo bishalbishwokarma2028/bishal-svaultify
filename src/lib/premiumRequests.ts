@@ -117,27 +117,19 @@ export const clearAdminSession = (): void => {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
 };
 
-// ── Cloud config via admin Supabase user metadata ────────────────────────────
-// Admin settings are stored in the admin Supabase account's user_metadata so
-// any device can fetch them on sync by signing in temporarily (in-memory only,
-// won't disrupt the logged-in user's session).
-
-const _SB_URL = import.meta.env.VITE_SUPABASE_URL as string
-  || 'https://qstylppeypeabeocqgtv.supabase.co';
-const _SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
-  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzdHlscHBleXBlYWJlb2NxZ3R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MDE2MjIsImV4cCI6MjA5NzE3NzYyMn0.NwhRkY4WZLPfmb-HwaNeGtbDiSK4joqzFp8pII8ViBQ';
-const _ADMIN_EMAIL = 'bishalbishwokarma089@gmail.com';
-const _ADMIN_PASSWORD = 'bishal@ado@9746294386';
+// ── Cloud config via Supabase admin_config table ──────────────────────────────
+// Settings (subscription price, storage limit, approved emails, plan access,
+// announcement) live in a single row (id=1) in the admin_config table.
+// The table has fully-public RLS so every device — whether the user is logged
+// in or not — can read it, and the admin panel can write it without signing
+// into Supabase (the admin auth is a local password check only).
+//
+// This replaces the old approach of signing in to the admin Supabase account
+// and writing to user_metadata, which broke whenever the admin account did
+// not exist in the connected project.
 
 let _cfgCache: { settings: AdminCloudSettings; ts: number } | null = null;
-const CFG_CACHE_TTL = 30 * 1000; // 30 seconds — short so admin changes reach users quickly
-
-const makeTempClient = async () => {
-  const { createClient } = await import('@supabase/supabase-js');
-  return createClient(_SB_URL, _SB_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-};
+const CFG_CACHE_TTL = 30 * 1000; // 30 s — short so changes reach users quickly
 
 export interface AdminCloudSettings {
   approvedEmails: string[];
@@ -150,133 +142,163 @@ export interface AdminCloudSettings {
 
 export const pushAdminSettingsToCloud = async (settings: AdminCloudSettings): Promise<void> => {
   try {
-    const client = await makeTempClient();
-    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
-    if (error) return;
-    await client.auth.updateUser({ data: { admin_config: JSON.stringify(settings) } });
-    await client.auth.signOut();
-    _cfgCache = { settings, ts: Date.now() };
-  } catch { /* silently ignore */ }
+    const { error } = await supabase
+      .from('admin_config')
+      .upsert(
+        {
+          id: 1,
+          approved_emails: settings.approvedEmails,
+          subscription_price: settings.subscriptionPrice,
+          free_storage_limit_gb: settings.freeStorageLimitGB,
+          plan_access: settings.planAccess,
+          announcement: settings.announcement,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+    if (!error) {
+      _cfgCache = { settings, ts: Date.now() };
+    } else {
+      console.warn('[admin_config] push failed:', error.message);
+    }
+  } catch (e) {
+    console.warn('[admin_config] push error:', e);
+  }
 };
 
 export const fetchAdminSettingsFromCloud = async (): Promise<AdminCloudSettings | null> => {
   if (_cfgCache && Date.now() - _cfgCache.ts < CFG_CACHE_TTL) return _cfgCache.settings;
   try {
-    const client = await makeTempClient();
-    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
-    if (error) return null;
-    const { data: { user } } = await client.auth.getUser();
-    await client.auth.signOut();
-    const raw = user?.user_metadata?.admin_config;
-    if (!raw) return null;
-    const settings = JSON.parse(raw) as AdminCloudSettings;
+    const { data, error } = await supabase
+      .from('admin_config')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const settings: AdminCloudSettings = {
+      approvedEmails: data.approved_emails || [],
+      subscriptionPrice: data.subscription_price || 300,
+      freeStorageLimitGB: data.free_storage_limit_gb || 5,
+      planAccess: data.plan_access || {},
+      announcement: data.announcement || '',
+      updatedAt: data.updated_at || new Date().toISOString(),
+    };
     _cfgCache = { settings, ts: Date.now() };
     return settings;
-  } catch { /* silently ignore */ }
-  return null;
+  } catch {
+    return null;
+  }
 };
 
 // ── Transaction Screenshots ───────────────────────────────────────────────────
-// Stored in the admin account's user_metadata under key `txscr_data` as a JSON
-// array. No Supabase Storage buckets are used — only metadata. Screenshots are
-// resized client-side to ≤800px / 72% JPEG before submission (~60-120 KB each).
+// Stored in the payment_screenshots Supabase table.
+// screenshot_data is a base64 JPEG data URL (resized to ≤800 px / 55% quality
+// before submission — roughly 40–100 KB each).
+// The table allows: authenticated INSERT (own row), public SELECT + DELETE
+// (so the admin panel — which has no Supabase session — can fetch and remove).
 
 export interface TxScreenshot {
   id: string;
   user_email: string;
   user_id: string;
   transaction_id: string;
-  screenshot_b64: string;
+  screenshot_data: string; // base64 data URL
   submitted_at: string;
 }
 
-const _readTxScreenshots = async (): Promise<TxScreenshot[]> => {
-  try {
-    const client = await makeTempClient();
-    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
-    if (error) return [];
-    const { data: { user } } = await client.auth.getUser();
-    await client.auth.signOut();
-    const raw = user?.user_metadata?.txscr_data;
-    if (!raw) return [];
-    return JSON.parse(raw) as TxScreenshot[];
-  } catch { return []; }
-};
-
-const _writeTxScreenshots = async (screenshots: TxScreenshot[]): Promise<void> => {
-  try {
-    const client = await makeTempClient();
-    const { error: signInErr } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
-    if (signInErr) { console.warn('[txscr] admin sign-in failed:', signInErr.message); return; }
-    const { error } = await client.auth.updateUser({ data: { txscr_data: JSON.stringify(screenshots) } });
-    if (error) console.warn('[txscr] write failed:', error.message);
-    await client.auth.signOut();
-  } catch (e) { console.warn('[txscr] write error:', e); }
-};
-
-/** User calls this on payment submit — adds or replaces their entry in the cloud queue. */
 export const submitTxScreenshot = async (entry: TxScreenshot): Promise<void> => {
-  const existing = await _readTxScreenshots();
-  // One entry per email — overwrite if the same user resubmits
-  const filtered = existing.filter(e => e.user_email.toLowerCase() !== entry.user_email.toLowerCase());
-  await _writeTxScreenshots([...filtered, entry]);
+  try {
+    // One entry per user — delete any previous submission first
+    await supabase
+      .from('payment_screenshots')
+      .delete()
+      .eq('user_id', entry.user_id);
+
+    const { error } = await supabase
+      .from('payment_screenshots')
+      .insert({
+        id: entry.id,
+        user_id: entry.user_id,
+        user_email: entry.user_email.toLowerCase(),
+        transaction_id: entry.transaction_id,
+        screenshot_data: entry.screenshot_data,
+      });
+    if (error) console.warn('[payment_screenshots] insert failed:', error.message);
+  } catch (e) {
+    console.warn('[payment_screenshots] submit error:', e);
+  }
 };
 
-/** Admin calls this to fetch all pending screenshots. */
 export const fetchTxScreenshots = async (): Promise<TxScreenshot[]> => {
-  return _readTxScreenshots();
+  try {
+    const { data, error } = await supabase
+      .from('payment_screenshots')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(s => ({
+      id: s.id,
+      user_email: s.user_email,
+      user_id: s.user_id || '',
+      transaction_id: s.transaction_id || '',
+      screenshot_data: s.screenshot_data,
+      submitted_at: s.submitted_at,
+    }));
+  } catch {
+    return [];
+  }
 };
 
-/** Admin calls this to delete a specific screenshot by id. */
 export const deleteTxScreenshot = async (id: string): Promise<void> => {
-  const existing = await _readTxScreenshots();
-  await _writeTxScreenshots(existing.filter(e => e.id !== id));
+  try {
+    const { error } = await supabase
+      .from('payment_screenshots')
+      .delete()
+      .eq('id', id);
+    if (error) console.warn('[payment_screenshots] delete failed:', error.message);
+  } catch (e) {
+    console.warn('[payment_screenshots] delete error:', e);
+  }
 };
 
 // ── Cloud User Registry ───────────────────────────────────────────────────────
-// When a user signs in on any device they call syncUserToCloud which upserts
-// their entry in the admin account's users_registry metadata key. The admin
-// fetches all registered users across all devices with fetchCloudUsersRegistry.
+// Every user is upserted into user_profiles on signup / signin so the admin
+// panel can see all registered users across all devices in real time.
+// The table has public SELECT (anon) so admin can read without Supabase auth,
+// and authenticated upsert restricted to the user's own row.
 
-/** Called on every sign-in to register the user in the cloud admin registry. */
 export const syncUserToCloud = async (user: { id: string; email: string; fullName: string }): Promise<void> => {
   try {
-    const client = await makeTempClient();
-    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
-    if (error) return;
-    const { data: { user: adminUser } } = await client.auth.getUser();
-
-    const lowerEmail = user.email.toLowerCase().trim();
-    const now = new Date().toISOString();
-
-    let existing: RegisteredUser[] = [];
-    try {
-      const raw = adminUser?.user_metadata?.users_registry;
-      if (raw) existing = JSON.parse(raw);
-    } catch { /* start fresh */ }
-
-    const idx = existing.findIndex(u => u.email === lowerEmail);
-    if (idx >= 0) {
-      existing[idx] = { ...existing[idx], lastSignInAt: now, fullName: user.fullName || existing[idx].fullName };
-    } else {
-      existing.push({ id: user.id, email: lowerEmail, fullName: user.fullName, registeredAt: now, lastSignInAt: now });
-    }
-
-    await client.auth.updateUser({ data: { users_registry: JSON.stringify(existing) } });
-    await client.auth.signOut();
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert(
+        {
+          id: user.id,
+          email: user.email.toLowerCase().trim(),
+          full_name: user.fullName || '',
+          last_sign_in_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+    if (error) console.warn('[user_profiles] upsert failed:', error.message);
   } catch { /* ignore — non-fatal */ }
 };
 
-/** Admin calls this to retrieve all users who have ever signed in from any device. */
 export const fetchCloudUsersRegistry = async (): Promise<RegisteredUser[]> => {
   try {
-    const client = await makeTempClient();
-    const { error } = await client.auth.signInWithPassword({ email: _ADMIN_EMAIL, password: _ADMIN_PASSWORD });
-    if (error) return [];
-    const { data: { user } } = await client.auth.getUser();
-    await client.auth.signOut();
-    const raw = user?.user_metadata?.users_registry;
-    if (!raw) return [];
-    return JSON.parse(raw) as RegisteredUser[];
-  } catch { return []; }
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .order('last_sign_in_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(u => ({
+      id: u.id,
+      email: u.email,
+      fullName: u.full_name || '',
+      registeredAt: u.registered_at,
+      lastSignInAt: u.last_sign_in_at,
+    }));
+  } catch {
+    return [];
+  }
 };

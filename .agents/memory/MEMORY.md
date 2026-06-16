@@ -1,3 +1,3 @@
 - [Supabase Storage bucket creation blocked](supabase-bucket-rls.md) — anon and authed user JWTs cannot create buckets; only service_role can. Use service_role key or Supabase dashboard.
-- [Admin config cross-device sync](admin-config-sync.md) — uses temp Supabase client (persistSession:false) to sign in as admin and read/write user_metadata; doesn't disrupt user session.
+- [Admin cloud sync migrated to tables](admin-config-sync.md) — admin_config / user_profiles / payment_screenshots tables replace old user_metadata hack; anon RLS policies so admin (no Supabase session) can read/write.
 - [File cross-device sync](file-cross-device.md) — files ≤5MB stored as base64 in DB content column; larger files need vault-files Storage bucket to be created manually.
