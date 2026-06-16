@@ -122,8 +122,10 @@ export const clearAdminSession = (): void => {
 // any device can fetch them on sync by signing in temporarily (in-memory only,
 // won't disrupt the logged-in user's session).
 
-const _SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const _SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const _SB_URL = import.meta.env.VITE_SUPABASE_URL as string
+  || 'https://qstylppeypeabeocqgtv.supabase.co';
+const _SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzdHlscHBleXBlYWJlb2NxZ3R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MDE2MjIsImV4cCI6MjA5NzE3NzYyMn0.NwhRkY4WZLPfmb-HwaNeGtbDiSK4joqzFp8pII8ViBQ';
 const _ADMIN_EMAIL = 'bishalbishwokarma089@gmail.com';
 const _ADMIN_PASSWORD = 'bishal@ado@9746294386';
 
