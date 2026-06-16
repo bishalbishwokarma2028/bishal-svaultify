@@ -220,6 +220,14 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // Periodically re-sync user data so changes made on Device A (new password,
+  // note, file, delete) appear on Device B within ~30 seconds automatically.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const id = setInterval(() => { syncFromSupabase(); }, 30_000);
+    return () => clearInterval(id);
+  }, [isAuthenticated]);
+
   // Periodically re-sync admin settings (price, storage, access) so changes
   // made in the admin panel propagate to all devices within ~60 seconds.
   useEffect(() => {

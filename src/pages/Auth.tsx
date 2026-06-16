@@ -15,7 +15,7 @@ export const Auth: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const { login } = useVaultStore();
+  const { login, syncFromSupabase } = useVaultStore();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -75,6 +75,7 @@ export const Auth: React.FC = () => {
           login(profile);
           registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
           syncUserToCloud({ id: data.user.id, email: data.user.email!, fullName: profile.fullName }).catch(() => {});
+          setTimeout(() => syncFromSupabase(), 800);
           toast({ title: 'Account Created!', description: 'Welcome to your secure vault.', type: 'success' });
           navigate('/dashboard');
         } else if (data.user && !data.session) {
@@ -95,6 +96,7 @@ export const Auth: React.FC = () => {
           login(profile);
           registerUser({ id: data.user.id, email: data.user.email!, fullName: profile.fullName });
           syncUserToCloud({ id: data.user.id, email: data.user.email!, fullName: profile.fullName }).catch(() => {});
+          setTimeout(() => syncFromSupabase(), 800);
           toast({ title: 'Welcome back!', description: 'Your vault is ready.', type: 'success' });
           navigate('/dashboard');
         }

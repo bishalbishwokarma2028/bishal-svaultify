@@ -1,0 +1,38 @@
+There is a critical issue that needs to be fixed.
+
+Currently, if a user signs up using a mobile phone, that user only appears in the Admin Panel when the Admin Panel is opened on a mobile device. If the Admin Panel is opened on a PC or laptop, users who signed up from mobile devices are not visible.
+
+Similarly, when a user submits a screenshot from a mobile device, the screenshot is visible only in the mobile version of the Admin Panel requests section. It is not visible when the Admin Panel is opened on a PC or laptop. The same issue occurs in reverse.
+
+This behavior is incorrect. All users and all screenshots must be synchronized and visible across every device and platform (mobile, tablet, laptop, and desktop).
+
+Most importantly, every screenshot submitted by a user must be automatically stored in the Admin Panel's "Screenshots" section. This is a mandatory requirement.
+
+At the moment, the Screenshots section remains empty on both mobile and desktop Admin Panels, even when users submit screenshots. This must be fixed.
+
+Required changes:
+
+1. All registered users must be visible in the Admin Panel regardless of whether they signed up from mobile, tablet, laptop, or desktop.
+
+2. All submitted screenshots must be stored in a centralized database/storage and displayed in the Admin Panel's "Screenshots" section.
+
+3. Every screenshot entry must display:
+
+   * User email
+   * Upload date and time
+   * Screenshot preview/image
+   * Device/platform information (if available)
+
+4. Admins must be able to:
+
+   * View screenshots
+   * Delete screenshots
+   * Search screenshots by user email
+
+5. The Screenshots section must work identically across mobile, tablet, laptop, and desktop Admin Panels.
+
+6. Ensure there is a single source of truth (Supabase database/storage) so that all users and screenshots are synchronized across all devices.
+
+7. Investigate and fix any device-specific storage logic that is causing data to appear only on the device type from which it was uploaded.
+
+This issue is high priority and must be resolved completely.
