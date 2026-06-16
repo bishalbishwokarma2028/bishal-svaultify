@@ -32,7 +32,9 @@ export const Dashboard: React.FC = () => {
     createFolder,
     isPremium,
     freeStorageLimitGB,
-    subscriptionPrice
+    subscriptionPrice,
+    syncLoading,
+    syncStats,
   } = useVaultStore();
   
   const navigate = useNavigate();
@@ -117,6 +119,19 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12">
+      {/* Sync loading / status banner */}
+      {syncLoading && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-blue-600/10 border border-blue-500/20 text-blue-300 text-xs font-medium">
+          <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          Syncing your vault from cloud…
+        </div>
+      )}
+      {!syncLoading && syncStats && (
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-medium">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          Cloud synced — {syncStats.passwords} passwords · {syncStats.files} files · {syncStats.notes} notes
+        </div>
+      )}
       {/* Top bar greeting & customization */}
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-2">

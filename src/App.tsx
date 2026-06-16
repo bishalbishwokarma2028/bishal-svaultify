@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useVaultStore } from './store/useVaultStore';
-import { ToastProvider } from './components/ui/Toast';
+import { ToastProvider, useToast } from './components/ui/Toast';
 import { supabase } from './lib/supabase';
 
 import { Sidebar } from './components/layout/Sidebar';
@@ -49,6 +49,39 @@ const PlanGate: React.FC<{ sectionId: string; children: React.ReactNode }> = ({ 
       </a>
     </div>
   );
+};
+
+const SyncStatusNotifier: React.FC = () => {
+  const { syncStats, syncError, isAuthenticated } = useVaultStore();
+  const { toast } = useToast();
+  const shownRef = useRef(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) { shownRef.current = false; return; }
+    if (!syncStats || shownRef.current) return;
+    shownRef.current = true;
+    const total = syncStats.passwords + syncStats.files + syncStats.notes + syncStats.reminders;
+    if (total > 0) {
+      toast({
+        title: 'Vault Synced',
+        description: `${syncStats.passwords} passwords · ${syncStats.files} files · ${syncStats.notes} notes`,
+        type: 'success',
+      });
+    }
+  }, [syncStats, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !syncError) return;
+    if (syncError.includes('does not exist') || syncError.includes('permission') || syncError.includes('denied')) {
+      toast({
+        title: 'Cloud Setup Required',
+        description: 'Please run the database schema SQL in your Supabase project to enable sync.',
+        type: 'error',
+      });
+    }
+  }, [syncError, isAuthenticated]);
+
+  return null;
 };
 
 const AdminBanner: React.FC = () => {
@@ -176,7 +209,7 @@ export const App: React.FC = () => {
         });
         setTimeout(() => syncPremiumFromGlobal(), 100);
         // Sync data from Supabase to restore any server-side data
-        setTimeout(() => syncFromSupabase(), 500);
+        setTimeout(() => syncFromSupabase(), 200);
       }
       setAuthLoading(false);
     });
@@ -197,7 +230,7 @@ export const App: React.FC = () => {
         });
         setTimeout(() => syncPremiumFromGlobal(), 100);
         // Sync data from Supabase — merges server data with local data
-        setTimeout(() => syncFromSupabase(), 800);
+        setTimeout(() => syncFromSupabase(), 200);
       } else if (event === 'SIGNED_OUT') {
         clearAuth();
         sessionStorage.removeItem('VAULTIFY_PWA_PROMPT_SHOWN');
@@ -269,6 +302,7 @@ export const App: React.FC = () => {
 
   return (
     <ToastProvider>
+      <SyncStatusNotifier />
       <AdminBanner />
       <Router>
         <Routes>

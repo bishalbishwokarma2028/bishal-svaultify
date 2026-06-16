@@ -42,7 +42,7 @@ import {
 } from '../lib/supportChat';
 
 export const Settings: React.FC = () => {
-  const { user, files, folders, passwords, notes, reminders, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment, backupData, restoreData, syncFromSupabase, subscriptionPrice: storePrice, planAccess, freeStorageLimitGB } = useVaultStore();
+  const { user, files, folders, passwords, notes, reminders, updateProfile, logout, isPremium, paymentStatus, premiumTransactionId, submitPremiumPayment, approvePayment, backupData, restoreData, syncFromSupabase, uploadLocalDataToCloud, syncStats, subscriptionPrice: storePrice, planAccess, freeStorageLimitGB } = useVaultStore();
   const { toast } = useToast();
 
   const [activeSection, setActiveSection] = useState<'profile' | 'storage' | 'notifications' | 'security' | 'install' | 'support' | 'backup'>('profile');
@@ -78,6 +78,8 @@ export const Settings: React.FC = () => {
   const [cloudRestoreResult, setCloudRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
   const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ uploaded: number; errors: number } | null>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   // PWA install
@@ -322,13 +324,43 @@ export const Settings: React.FC = () => {
     setIsSyncing(true);
     try {
       const ok = await syncFromSupabase();
-      if (ok) {
+      if (ok && syncStats) {
+        toast({ 
+          title: 'Sync Complete', 
+          description: `${syncStats.passwords} passwords · ${syncStats.files} files · ${syncStats.notes} notes found in cloud.`, 
+          type: 'success' 
+        });
+      } else if (ok) {
         toast({ title: 'Sync Complete', description: 'Your vault is up to date.', type: 'success' });
       } else {
-        toast({ title: 'Sync Issue', description: 'Could not reach cloud. Check your connection.', type: 'error' });
+        toast({ title: 'Sync Failed', description: 'Could not reach cloud. Tables may not be set up. See browser console for details.', type: 'error' });
       }
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleForceUpload = async () => {
+    setIsUploading(true);
+    setUploadResult(null);
+    try {
+      const result = await uploadLocalDataToCloud();
+      setUploadResult(result);
+      if (result.errors === 0) {
+        toast({ 
+          title: 'Upload Complete', 
+          description: `${result.uploaded} items pushed to cloud successfully.`, 
+          type: 'success' 
+        });
+      } else {
+        toast({ 
+          title: 'Upload Partial', 
+          description: `${result.uploaded} uploaded, ${result.errors} failed. Check browser console for errors.`, 
+          type: 'error' 
+        });
+      }
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -1051,6 +1083,44 @@ export const Settings: React.FC = () => {
                     <><div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" /><span>Syncing...</span></>
                   ) : (
                     <><RefreshCw className="w-4 h-4" /><span>Sync Now</span></>
+                  )}
+                </button>
+              </div>
+
+              {/* Force Upload to Cloud */}
+              <div className="glass-panel-premium rounded-3xl p-6 border border-amber-500/20 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Push Local Data to Cloud</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Force-upload everything saved on this device so other devices can sync it.</p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-500/[0.06] border border-amber-500/15 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-amber-300">Use this if another device shows empty data</p>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    If your passwords or files appear on this device but not on another, your data may be stored locally only.
+                    This will push <strong className="text-white">{passwords.length} passwords</strong>, <strong className="text-white">{files.length} files</strong>, <strong className="text-white">{notes.length} notes</strong>, and <strong className="text-white">{folders.length} folders</strong> from this device to your cloud account.
+                  </p>
+                </div>
+                {uploadResult && (
+                  <div className={`p-3 rounded-xl border text-xs font-medium ${uploadResult.errors === 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border-red-500/20 text-red-300'}`}>
+                    {uploadResult.errors === 0
+                      ? `✓ ${uploadResult.uploaded} items uploaded to cloud successfully.`
+                      : `${uploadResult.uploaded} uploaded, ${uploadResult.errors} failed — check browser console for details.`}
+                  </div>
+                )}
+                <button
+                  onClick={handleForceUpload}
+                  disabled={isUploading}
+                  className="w-full py-3 rounded-2xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploading ? (
+                    <><div className="w-4 h-4 border-2 border-amber-300 border-t-transparent rounded-full animate-spin" /><span>Uploading to cloud…</span></>
+                  ) : (
+                    <><Upload className="w-4 h-4" /><span>Push All Data to Cloud</span></>
                   )}
                 </button>
               </div>

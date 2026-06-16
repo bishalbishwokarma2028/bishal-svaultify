@@ -89,7 +89,11 @@ interface VaultStore {
 
   createSharedLink: (link: Omit<SharedLink, 'id' | 'createdAt' | 'downloadsCount'>) => Promise<void>;
 
+  syncLoading: boolean;
+  syncError: string | null;
+  syncStats: { passwords: number; files: number; notes: number; folders: number; reminders: number; syncedAt: string } | null;
   syncFromSupabase: () => Promise<boolean>;
+  uploadLocalDataToCloud: () => Promise<{ uploaded: number; errors: number }>;
   refreshAdminSettings: () => Promise<void>;
   backupData: () => Promise<void>;
   restoreData: (backupJson: string) => Promise<{ success: boolean; message: string; restored: number }>;
@@ -110,6 +114,9 @@ export const useVaultStore = create<VaultStore>()(
       paymentStatus: 'none',
       premiumTransactionId: '',
       dataOwnerId: null,
+      syncLoading: false,
+      syncError: null,
+      syncStats: null,
       premiumScreenshot: '',
       planAccess: (() => { try { return JSON.parse(localStorage.getItem('vaultify-plan-access') || '{}'); } catch { return {}; } })(),
       freeStorageLimitGB: (() => { const g = Number(localStorage.getItem('vaultify-admin-free-limit-gb')); return g > 0 ? g : 5; })(),
@@ -416,8 +423,12 @@ export const useVaultStore = create<VaultStore>()(
                     : f
                   )
                 }));
+              } else if (error) {
+                console.error('[Vaultify] File cloud save failed:', error.message, '| code:', error.code);
               }
-            } catch { /* keep local */ }
+            } catch (err: any) {
+              console.error('[Vaultify] File cloud save exception:', err?.message || err);
+            }
           })().catch(() => {});
         }
         get().logActivity('upload', `Uploaded file "${newFile.name}"`);
@@ -505,8 +516,12 @@ export const useVaultStore = create<VaultStore>()(
                   updatedAt: data.updated_at,
                 } : p)
               }));
+            } else if (error) {
+              console.error('[Vaultify] Password cloud save failed:', error.message, '| code:', error.code);
             }
-          } catch { /* keep local */ }
+          } catch (err: any) {
+            console.error('[Vaultify] Password cloud save exception:', err?.message || err);
+          }
         }
         get().logActivity('upload', `Saved password for "${newPwd.title}"`);
       },
@@ -571,8 +586,12 @@ export const useVaultStore = create<VaultStore>()(
                   tags: data.tags || [], createdAt: data.created_at, updatedAt: data.updated_at
                 } : n)
               }));
+            } else if (error) {
+              console.error('[Vaultify] Note cloud save failed:', error.message, '| code:', error.code);
             }
-          } catch { /* keep local */ }
+          } catch (err: any) {
+            console.error('[Vaultify] Note cloud save exception:', err?.message || err);
+          }
         }
         get().logActivity('upload', `Created note "${newNote.title}"`);
       },
@@ -809,6 +828,8 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (!userId || !supabase) return false;
 
+        set({ syncLoading: true, syncError: null });
+
         try {
           // Fetch all user data in parallel.
           // Files uses a metadata-only select to avoid pulling large base64 content
@@ -825,8 +846,18 @@ export const useVaultStore = create<VaultStore>()(
             supabase.from('user_profiles').select('hidden_vault_pin').eq('id', userId).maybeSingle(),
           ]);
 
-          // Abort only if the two most critical tables both failed simultaneously
-          if (foldersRes.error && pwdRes.error) {
+          // Log any individual table errors so they show in the browser console
+          if (foldersRes.error)   console.error('[Vaultify] Sync folders error:', foldersRes.error.message, foldersRes.error.code);
+          if (filesMetaRes.error) console.error('[Vaultify] Sync files error:', filesMetaRes.error.message, filesMetaRes.error.code);
+          if (pwdRes.error)       console.error('[Vaultify] Sync passwords error:', pwdRes.error.message, pwdRes.error.code);
+          if (notesRes.error)     console.error('[Vaultify] Sync notes error:', notesRes.error.message, notesRes.error.code);
+          if (remRes.error)       console.error('[Vaultify] Sync reminders error:', remRes.error.message, remRes.error.code);
+
+          // Abort if all core tables failed — indicates Supabase is unreachable or tables don't exist
+          if (foldersRes.error && pwdRes.error && filesMetaRes.error && notesRes.error) {
+            const errMsg = pwdRes.error.message || 'Could not reach cloud database';
+            console.error('[Vaultify] All sync queries failed. Tables may not be set up yet. Error:', errMsg);
+            set({ syncLoading: false, syncError: errMsg });
             return false;
           }
 
@@ -1025,11 +1056,164 @@ export const useVaultStore = create<VaultStore>()(
             }
           } catch { /* ignore — settings will use local defaults */ }
 
+          const stats = {
+            passwords: sbPasswords.length,
+            files: sbFiles.length,
+            notes: sbNotes.length,
+            folders: sbFolders.length,
+            reminders: sbReminders.length,
+            syncedAt: new Date().toISOString(),
+          };
+          console.log('[Vaultify] Sync complete:', stats);
+          set({ syncLoading: false, syncError: null, syncStats: stats });
           return true;
-        } catch (err) {
-          console.error('syncFromSupabase error:', err);
+        } catch (err: any) {
+          const msg = err?.message || 'Sync failed';
+          console.error('[Vaultify] syncFromSupabase error:', err);
+          set({ syncLoading: false, syncError: msg });
           return false;
         }
+      },
+
+      uploadLocalDataToCloud: async () => {
+        const userId = get().user?.id;
+        if (!userId || !supabase) return { uploaded: 0, errors: 0 };
+
+        let uploaded = 0;
+        let errors = 0;
+        const state = get();
+
+        // Upsert all passwords — handles both "never saved" and "already saved" items
+        for (const pwd of state.passwords) {
+          try {
+            const { error } = await supabase.from('passwords').upsert({
+              id: pwd.id,
+              title: pwd.title,
+              username: pwd.username || '',
+              password_encrypted: pwd.passwordEncrypted,
+              url: pwd.url || null,
+              category: pwd.category || 'Personal',
+              notes: pwd.notes || null,
+              strength: pwd.strength || 'Medium',
+              user_id: userId,
+              created_at: pwd.createdAt,
+              updated_at: pwd.updatedAt,
+            }, { onConflict: 'id' });
+            if (error) {
+              console.error('[Vaultify] Upload password failed:', error.message);
+              errors++;
+            } else {
+              uploaded++;
+            }
+          } catch (e: any) {
+            console.error('[Vaultify] Upload password exception:', e?.message);
+            errors++;
+          }
+        }
+
+        // Upsert all notes
+        for (const note of state.notes) {
+          try {
+            const { error } = await supabase.from('notes').upsert({
+              id: note.id,
+              title: note.title,
+              content: note.content,
+              category: note.category || 'Personal',
+              is_pinned: note.isPinned || false,
+              is_locked: note.isLocked || false,
+              tags: note.tags || [],
+              user_id: userId,
+              created_at: note.createdAt,
+              updated_at: note.updatedAt,
+            }, { onConflict: 'id' });
+            if (error) {
+              console.error('[Vaultify] Upload note failed:', error.message);
+              errors++;
+            } else {
+              uploaded++;
+            }
+          } catch (e: any) {
+            console.error('[Vaultify] Upload note exception:', e?.message);
+            errors++;
+          }
+        }
+
+        // Upsert all file metadata + content
+        for (const file of state.files) {
+          try {
+            let dbContent: string | null = null;
+            if (isLocalFileUrl(file.url)) {
+              const fileId = getFileIdFromUrl(file.url);
+              const content = await getFileContent(fileId).catch(() => null);
+              if (content) {
+                if (typeof content === 'string') {
+                  dbContent = content;
+                } else if (content instanceof Blob && content.size <= 20 * 1024 * 1024) {
+                  dbContent = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(content);
+                  }).catch(() => null);
+                }
+              }
+            }
+
+            const { error } = await supabase.from('files').upsert({
+              id: file.id,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              url: file.url,
+              content: dbContent,
+              folder_id: file.folderId || null,
+              category: file.category || 'Other',
+              tags: file.tags || [],
+              is_starred: file.isStarred || false,
+              is_archived: file.isArchived || false,
+              expiry_date: file.expiryDate || null,
+              user_id: userId,
+              created_at: file.createdAt,
+              updated_at: file.updatedAt,
+            }, { onConflict: 'id' });
+            if (error) {
+              console.error('[Vaultify] Upload file failed:', error.message);
+              errors++;
+            } else {
+              uploaded++;
+            }
+          } catch (e: any) {
+            console.error('[Vaultify] Upload file exception:', e?.message);
+            errors++;
+          }
+        }
+
+        // Upsert all folders
+        for (const folder of state.folders) {
+          try {
+            const { error } = await supabase.from('folders').upsert({
+              id: folder.id,
+              name: folder.name,
+              parent_id: folder.parentId || null,
+              color: folder.color || '#3b82f6',
+              user_id: userId,
+              created_at: folder.createdAt,
+              updated_at: folder.updatedAt,
+            }, { onConflict: 'id' });
+            if (error) {
+              console.error('[Vaultify] Upload folder failed:', error.message);
+              errors++;
+            } else {
+              uploaded++;
+            }
+          } catch (e: any) {
+            console.error('[Vaultify] Upload folder exception:', e?.message);
+            errors++;
+          }
+        }
+
+        console.log(`[Vaultify] Force upload complete: ${uploaded} uploaded, ${errors} errors`);
+        return { uploaded, errors };
       },
 
       refreshAdminSettings: async () => {
