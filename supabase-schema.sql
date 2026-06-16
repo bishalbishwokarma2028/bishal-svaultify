@@ -180,8 +180,11 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
     email TEXT NOT NULL,
     full_name TEXT DEFAULT '',
     registered_at TIMESTAMPTZ DEFAULT now(),
-    last_sign_in_at TIMESTAMPTZ DEFAULT now()
+    last_sign_in_at TIMESTAMPTZ DEFAULT now(),
+    hidden_vault_pin TEXT DEFAULT ''
 );
+-- Add hidden_vault_pin to existing deployments (safe to run multiple times)
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS hidden_vault_pin TEXT DEFAULT '';
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public read user profiles" ON public.user_profiles;
 DROP POLICY IF EXISTS "Auth users manage own profile" ON public.user_profiles;

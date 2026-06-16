@@ -690,12 +690,15 @@ export const useVaultStore = create<VaultStore>()(
 
       setHiddenVaultPin: (pin) => {
         set({ hiddenVaultPin: pin });
-        // Persist PIN to Supabase user metadata for cross-device sync
-        if (supabase) {
-          supabase.auth.updateUser({ data: { vault_pin: pin } }).catch(() => {});
-        }
-        // Also save in localStorage keyed by userId
         const userId = get().user?.id;
+        // Sync PIN to Supabase user_profiles for cross-device access
+        if (userId && supabase) {
+          (async () => {
+            try {
+              await supabase.from('user_profiles').update({ hidden_vault_pin: pin }).eq('id', userId);
+            } catch { /* ignore */ }
+          })();
+        }
         if (userId) {
           try { localStorage.setItem(`vaultify_hvpin_${userId}`, pin); } catch { /* ignore */ }
         }
@@ -807,78 +810,117 @@ export const useVaultStore = create<VaultStore>()(
         if (!userId || !supabase) return false;
 
         try {
-          const [foldersRes, filesRes, pwdRes, notesRes, remRes, ecRes] = await Promise.all([
+          // Fetch all user data in parallel.
+          // Files uses a metadata-only select to avoid pulling large base64 content
+          // columns on every sync cycle — content is fetched lazily below.
+          const [foldersRes, filesMetaRes, pwdRes, notesRes, remRes, ecRes, profileRes] = await Promise.all([
             supabase.from('folders').select('*').eq('user_id', userId),
-            supabase.from('files').select('*').eq('user_id', userId),
+            supabase.from('files')
+              .select('id,name,size,type,url,folder_id,category,tags,is_starred,is_archived,created_at,updated_at,expiry_date')
+              .eq('user_id', userId),
             supabase.from('passwords').select('*').eq('user_id', userId),
             supabase.from('notes').select('*').eq('user_id', userId),
             supabase.from('reminders').select('*').eq('user_id', userId),
             supabase.from('emergency_contacts').select('*').eq('user_id', userId),
+            supabase.from('user_profiles').select('hidden_vault_pin').eq('id', userId).maybeSingle(),
           ]);
 
+          // Abort only if the two most critical tables both failed simultaneously
           if (foldersRes.error && pwdRes.error) {
             return false;
           }
 
-          // Build sets of Supabase IDs for deduplication
-          const sbFolderIds = new Set((foldersRes.data || []).map((f: any) => f.id));
-          const sbFileIds = new Set((filesRes.data || []).map((f: any) => f.id));
-          const sbPwdIds = new Set((pwdRes.data || []).map((p: any) => p.id));
-          const sbNoteIds = new Set((notesRes.data || []).map((n: any) => n.id));
-          const sbRemIds = new Set((remRes.data || []).map((r: any) => r.id));
-          const sbEcIds = new Set((ecRes.data || []).map((c: any) => c.id));
+          // ── Restore Hidden Vault PIN from cloud if not set locally ──────────
+          const cloudPin: string | undefined = (profileRes.data as any)?.hidden_vault_pin;
+          if (cloudPin && !get().hiddenVaultPin) {
+            set({ hiddenVaultPin: cloudPin });
+            try { localStorage.setItem(`vaultify_hvpin_${userId}`, cloudPin); } catch { /* ignore */ }
+          }
 
-          // Map Supabase data
+          // Build ID sets for deduplication / deletion detection
+          const sbFolderIds = new Set((foldersRes.data || []).map((f: any) => f.id));
+          const sbFileIds   = new Set((filesMetaRes.data || []).map((f: any) => f.id));
+          const sbPwdIds    = new Set((pwdRes.data || []).map((p: any) => p.id));
+          const sbNoteIds   = new Set((notesRes.data || []).map((n: any) => n.id));
+          const sbRemIds    = new Set((remRes.data || []).map((r: any) => r.id));
+          const sbEcIds     = new Set((ecRes.data || []).map((c: any) => c.id));
+
           const sbFolders: Folder[] = (foldersRes.data || []).map((f: any) => ({
             id: f.id, name: f.name, parentId: f.parent_id,
             color: f.color || '#3b82f6', createdAt: f.created_at, updatedAt: f.updated_at
           }));
 
+          // ── Files: lazy-load content only for files that need it ────────────
+          // Identify files whose content is not yet available locally and that
+          // have no accessible public URL (i.e. still stored as local://<id>).
+          const filesMeta = filesMetaRes.data || [];
+          const needsContentIds: string[] = [];
+
+          for (const f of filesMeta) {
+            const hasPublicUrl = f.url && !String(f.url).startsWith('local://');
+            if (hasPublicUrl) continue; // accessible via URL on any device already
+
+            const localId = f.url ? String(f.url).replace('local://', '') : null;
+            const localContent   = localId ? await getFileContent(localId) : undefined;
+            const canonicalContent = await getFileContent(f.id);
+            if (!localContent && !canonicalContent) {
+              needsContentIds.push(f.id);
+            }
+          }
+
+          // Single batch query for all missing content (avoids N separate round-trips)
+          const contentMap = new Map<string, string>();
+          if (needsContentIds.length > 0) {
+            try {
+              const contentRes = await supabase
+                .from('files')
+                .select('id,content')
+                .in('id', needsContentIds)
+                .not('content', 'is', null);
+              for (const row of (contentRes.data || [])) {
+                if (row.content) contentMap.set(row.id, row.content);
+              }
+            } catch { /* files without DB content simply won't be viewable locally */ }
+          }
+
           let totalUsed = 0;
-          const sbFiles: FileItem[] = await Promise.all((filesRes.data || []).map(async (f: any) => {
+          const sbFiles: FileItem[] = await Promise.all(filesMeta.map(async (f: any) => {
             totalUsed += Number(f.size || 0);
 
             let resolvedUrl = '';
 
-            if (f.content) {
-              // Base64 content in DB → restore to local IDB keyed by Supabase UUID
-              const existing = await getFileContent(f.id);
-              if (!existing) {
-                await storeFileContent(f.id, f.content).catch(() => {});
-              }
-              resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
-            } else if (f.url && !f.url.startsWith('local://')) {
-              // Valid remote storage URL — accessible cross-device directly
+            if (f.url && !String(f.url).startsWith('local://')) {
+              // Valid public storage URL — accessible cross-device directly
               resolvedUrl = f.url;
             } else {
-              // url is 'local://<originalLocalId>' with no content column.
-              // Check if this device already has the blob.
-              // First try the original local placeholder ID (Device A upload path).
-              const localId = f.url ? f.url.replace('local://', '') : null;
-              if (localId) {
-                const localBlob = await getFileContent(localId);
-                if (localBlob) {
-                  // Re-index under the canonical Supabase UUID for consistency
-                  await storeFileContent(f.id, localBlob).catch(() => {});
+              // Try the original local placeholder ID first (Device A upload path)
+              const localId = f.url ? String(f.url).replace('local://', '') : null;
+              const localContent = localId ? await getFileContent(localId) : undefined;
+
+              if (localContent) {
+                // Re-index under canonical Supabase UUID for consistency
+                await storeFileContent(f.id, localContent).catch(() => {});
+                resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
+              } else {
+                // Check canonical UUID in IDB (covers backup-restore path)
+                const canonicalContent = await getFileContent(f.id);
+                if (canonicalContent) {
                   resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
+                } else {
+                  // Use content fetched from DB in the batch query above
+                  const dbContent = contentMap.get(f.id);
+                  if (dbContent) {
+                    await storeFileContent(f.id, dbContent).catch(() => {});
+                    resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
+                  }
+                  // else: file not available on this device (>20MB, no storage bucket)
                 }
               }
-              // Fallback: check under the canonical Supabase UUID itself.
-              // This covers the case where a backup restore already wrote content
-              // to IDB under f.id BEFORE sync ran.
-              if (!resolvedUrl) {
-                const canonicalBlob = await getFileContent(f.id);
-                if (canonicalBlob) {
-                  resolvedUrl = `${LOCAL_FILE_PREFIX}${f.id}`;
-                }
-              }
-              // else: truly not available on this device
             }
 
             return {
               id: f.id, name: f.name, size: Number(f.size || 0),
-              type: f.type,
-              url: resolvedUrl,
+              type: f.type, url: resolvedUrl,
               folderId: f.folder_id,
               category: f.category, tags: f.tags || [],
               isStarred: f.is_starred, isArchived: f.is_archived,
@@ -914,41 +956,36 @@ export const useVaultStore = create<VaultStore>()(
             status: c.status, createdAt: c.created_at
           }));
 
-          // Merge: combine Supabase data with local-only items
+          // Merge: combine Supabase data with local-only (unsynced) items
           const state = get();
           const localOnlyFolders = state.folders.filter(f => !sbFolderIds.has(f.id));
-          // A file is truly "local-only pending sync" only if its id is embedded in its own url
-          // (i.e. local://id === id).  Files that were previously synced to Supabase and then
-          // deleted there will have a Supabase UUID as id but a different localId in their url —
-          // those must NOT be preserved; they should be treated as deleted on this device too.
+          // A file is "local-only pending sync" only when its id is still the local
+          // placeholder id embedded in its own url (local://id === id).
+          // Files deleted remotely have a Supabase UUID as id but are not in sbFileIds —
+          // those must NOT be preserved so remote deletes propagate here.
           const localOnlyFiles = state.files.filter(f => {
-            if (sbFileIds.has(f.id)) return false; // in Supabase — handled above
-            // Only preserve if this file has never reached Supabase yet
-            // (its id still matches the local placeholder id embedded in its url)
+            if (sbFileIds.has(f.id)) return false;
             if (isLocalFileUrl(f.url)) {
               return getFileIdFromUrl(f.url) === f.id;
             }
-            // Non-local URL and not in Supabase → was synced then deleted remotely → remove
             return false;
           });
-          const localOnlyPasswords = state.passwords.filter(p => !sbPwdIds.has(p.id));
-          const localOnlyNotes = state.notes.filter(n => !sbNoteIds.has(n.id));
-          const localOnlyReminders = state.reminders.filter(r => !sbRemIds.has(r.id));
-          const localOnlyContacts = state.emergencyContacts.filter(c => !sbEcIds.has(c.id));
+          const localOnlyPasswords  = state.passwords.filter(p => !sbPwdIds.has(p.id));
+          const localOnlyNotes      = state.notes.filter(n => !sbNoteIds.has(n.id));
+          const localOnlyReminders  = state.reminders.filter(r => !sbRemIds.has(r.id));
+          const localOnlyContacts   = state.emergencyContacts.filter(c => !sbEcIds.has(c.id));
 
           set((s) => ({
-            folders: [...sbFolders, ...localOnlyFolders],
-            files: [...sbFiles, ...localOnlyFiles],
-            passwords: [...sbPasswords, ...localOnlyPasswords],
-            notes: [...sbNotes, ...localOnlyNotes],
-            reminders: [...sbReminders, ...localOnlyReminders],
+            folders:           [...sbFolders,           ...localOnlyFolders],
+            files:             [...sbFiles,             ...localOnlyFiles],
+            passwords:         [...sbPasswords,         ...localOnlyPasswords],
+            notes:             [...sbNotes,             ...localOnlyNotes],
+            reminders:         [...sbReminders,         ...localOnlyReminders],
             emergencyContacts: [...sbEmergencyContacts, ...localOnlyContacts],
             user: s.user ? { ...s.user, usedStorage: totalUsed } : null
           }));
 
-          // ── Fetch admin cloud settings and apply them ──────────────────────
-          // This syncs subscription price, premium approvals, plan access, and
-          // free storage limit from the admin's last save to every device.
+          // ── Admin cloud settings ─────────────────────────────────────────────
           try {
             const cloudCfg = await fetchAdminSettingsFromCloud();
             if (cloudCfg) {
@@ -976,19 +1013,12 @@ export const useVaultStore = create<VaultStore>()(
               if (typeof cloudCfg.announcement === 'string') {
                 localStorage.setItem('vaultify-admin-announcement', cloudCfg.announcement);
               }
-              // Grant OR revoke premium based on the admin-controlled approved list.
-              // This is the single source of truth — local isPremium state is always
-              // overwritten by whatever the cloud says, so admin removals take effect
-              // within one sync cycle (≤30 s with visibilitychange).
               const user = get().user;
               if (user && Array.isArray(cloudCfg.approvedEmails)) {
                 const approvedSet = new Set(cloudCfg.approvedEmails.map((e: string) => e.toLowerCase().trim()));
                 if (approvedSet.has(user.email.toLowerCase().trim())) {
                   set({ isPremium: true, paymentStatus: 'approved' });
                 } else {
-                  // Not in approved list — revoke premium unconditionally.
-                  // If user currently has isPremium:true or paymentStatus:'approved',
-                  // that means admin removed them and we must reflect that immediately.
                   set({ isPremium: false, paymentStatus: 'none' });
                 }
               }
