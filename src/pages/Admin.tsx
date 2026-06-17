@@ -49,6 +49,7 @@ import {
   fetchCloudUsersRegistry,
   fetchPremiumRequestsFromCloud,
   updateCloudRequestStatus,
+  deleteTxScreenshotByEmail,
   PremiumRequest,
   RegisteredUser,
   TxScreenshot,
@@ -300,6 +301,7 @@ export const Admin: React.FC = () => {
     flash(`Premium approved for ${req.email}`);
     pushAllToCloud();
     updateCloudRequestStatus(req.id, 'approved');
+    deleteTxScreenshotByEmail(req.email);
     // Optimistically update cloud requests state so UI reflects immediately
     setCloudRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' as const, reviewedAt: new Date().toISOString() } : r));
   };
@@ -311,6 +313,7 @@ export const Admin: React.FC = () => {
     flash(`Request rejected for ${req.email}`);
     pushAllToCloud();
     updateCloudRequestStatus(req.id, 'rejected');
+    deleteTxScreenshotByEmail(req.email);
     // Optimistically update cloud requests state so UI reflects immediately
     setCloudRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'rejected' as const, reviewedAt: new Date().toISOString() } : r));
   };

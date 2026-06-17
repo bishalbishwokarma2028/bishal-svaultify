@@ -13,7 +13,8 @@ import {
   Share2, 
   Download, 
   Eye, 
-  ChevronRight, 
+  ChevronRight,
+  ChevronLeft,
   Home, 
   FolderPlus,
   Upload,
@@ -42,6 +43,31 @@ const getFileIcon = (type: string) => {
   if (type.includes('zip') || type.includes('archive') || type.includes('tar') || type.includes('rar')) return <FileArchive className="w-5 h-5" />;
   if (type.includes('pdf') || type.includes('word') || type.includes('text') || type.includes('document')) return <FileText className="w-5 h-5" />;
   return <File className="w-5 h-5" />;
+};
+
+const FileThumbnail: React.FC<{ file: FileItem }> = ({ file }) => {
+  const [thumbUrl, setThumbUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!file.type.startsWith('image/')) return;
+    const url = file.url || '';
+    if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('blob:')) {
+      setThumbUrl(url);
+      return;
+    }
+    if (isLocalFileUrl(url)) {
+      getFileContentUrl(getFileIdFromUrl(url))
+        .then(u => setThumbUrl(u || null))
+        .catch(() => {});
+    }
+  }, [file.url, file.type]);
+
+  if (!file.type.startsWith('image/') || !thumbUrl) return null;
+  return (
+    <div className="w-full h-28 overflow-hidden bg-black/20 rounded-t-2xl">
+      <img src={thumbUrl} alt={file.name} className="w-full h-full object-cover" loading="lazy" />
+    </div>
+  );
 };
 
 const convertHeicToJpeg = async (file: File): Promise<File> => {
@@ -198,6 +224,26 @@ export const Vault: React.FC = () => {
         : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [files, currentFolderId, activeCategory, searchQuery, sortBy, sortOrder]);
+
+  const previewIndex = previewFile ? filteredFiles.findIndex(f => f.id === previewFile.id) : -1;
+
+  useEffect(() => {
+    if (!previewFile) return;
+    const handleKey = (e: KeyboardEvent) => {
+      const idx = filteredFiles.findIndex(f => f.id === previewFile.id);
+      if (e.key === 'ArrowLeft' && idx > 0) {
+        e.preventDefault();
+        setPreviewFile(filteredFiles[idx - 1]);
+      } else if (e.key === 'ArrowRight' && idx < filteredFiles.length - 1) {
+        e.preventDefault();
+        setPreviewFile(filteredFiles[idx + 1]);
+      } else if (e.key === 'Escape') {
+        setPreviewFile(null);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [previewFile, filteredFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleStar = async (id: string, current: boolean, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -532,14 +578,19 @@ export const Vault: React.FC = () => {
                     layout
                     key={file.id}
                     onClick={() => setPreviewFile(file)}
-                    className="p-3 sm:p-4 rounded-2xl glass-panel border border-white/10 hover:border-blue-500/40 transition-all cursor-pointer group flex flex-col justify-between relative overflow-hidden"
+                    className="rounded-2xl glass-panel border border-white/10 hover:border-blue-500/40 transition-all cursor-pointer group flex flex-col relative overflow-hidden"
                   >
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="p-2 rounded-xl bg-white/5 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors flex-shrink-0">
-                        {getFileIcon(file.type)}
-                      </div>
+                    {/* Image thumbnail — shown at card top for image files */}
+                    <FileThumbnail file={file} />
 
-                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <div className={`flex items-start justify-between gap-1 ${file.type.startsWith('image/') ? 'px-2.5 pt-2' : 'p-3 sm:p-4'}`}>
+                      {!file.type.startsWith('image/') && (
+                        <div className="p-2 rounded-xl bg-white/5 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors flex-shrink-0">
+                          {getFileIcon(file.type)}
+                        </div>
+                      )}
+
+                      <div className={`flex items-center gap-0.5 flex-shrink-0 ${file.type.startsWith('image/') ? 'ml-auto' : ''}`}>
                         <button
                           onClick={(e) => toggleStar(file.id, file.isStarred, e)}
                           className={`p-1.5 rounded-lg transition-colors ${
@@ -570,7 +621,7 @@ export const Vault: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="mt-3">
+                    <div className={`${file.type.startsWith('image/') ? 'px-2.5 pb-1' : 'px-3 sm:px-4 pb-1'}`}>
                       <p className="text-xs font-bold text-gray-100 truncate group-hover:text-white">
                         {file.name}
                       </p>
@@ -579,7 +630,7 @@ export const Vault: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-500">
+                    <div className={`${file.type.startsWith('image/') ? 'px-2.5 pb-2.5' : 'px-3 sm:px-4 pb-3 sm:pb-4'} pt-2 mt-1 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-500`}>
                       <span>{file.size < 1024 ? `${file.size} B` : file.size < 1048576 ? `${(file.size/1024).toFixed(1)} KB` : `${(file.size/1048576).toFixed(1)} MB`}</span>
                       <span>{new Date(file.createdAt).toLocaleDateString()}</span>
                     </div>
@@ -786,6 +837,28 @@ export const Vault: React.FC = () => {
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
+
+                  <div className="flex items-center gap-0.5 border-l border-white/10 pl-2 ml-1">
+                    <button
+                      onClick={() => previewIndex > 0 && setPreviewFile(filteredFiles[previewIndex - 1])}
+                      disabled={previewIndex <= 0}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Previous file (←)"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-[10px] text-gray-500 min-w-[40px] text-center select-none">
+                      {previewIndex + 1} / {filteredFiles.length}
+                    </span>
+                    <button
+                      onClick={() => previewIndex < filteredFiles.length - 1 && setPreviewFile(filteredFiles[previewIndex + 1])}
+                      disabled={previewIndex >= filteredFiles.length - 1}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Next file (→)"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
 
                   <button
                     onClick={() => setPreviewFile(null)}

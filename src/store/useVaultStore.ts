@@ -367,33 +367,12 @@ export const useVaultStore = create<VaultStore>()(
         const userId = get().user?.id;
         if (userId && supabase) {
           (async () => {
-            // Try Supabase Storage upload for cross-device access via public URL
-            let storageUrl: string | null = null;
-            if (isBlob) {
-              try {
-                await supabase.storage.createBucket('vault-files', { public: true }).catch(() => {});
-                const ext = fileData.name.includes('.') ? fileData.name.split('.').pop()!.toLowerCase() : 'bin';
-                const storagePath = `${userId}/${localId}.${ext}`;
-                const { error: uploadError } = await supabase.storage
-                  .from('vault-files')
-                  .upload(storagePath, fileContent as Blob, {
-                    contentType: fileData.type || 'application/octet-stream',
-                    upsert: true,
-                  });
-                if (!uploadError) {
-                  storageUrl = supabase.storage.from('vault-files').getPublicUrl(storagePath).data.publicUrl;
-                  set((state) => ({
-                    files: state.files.map(f => f.id === localId ? { ...f, url: storageUrl! } : f)
-                  }));
-                }
-              } catch { /* keep local */ }
-            }
-
-            // Base64 fallback — files ≤ 20 MB stored in content column for cross-device sync
+            // Base64 for cross-device sync — files ≤ 50 MB stored in content column
+            // All files (photos, videos, docs) are stored in DB, not Supabase Storage
             let dbContent: string | null = null;
             if (!isBlob && typeof fileContent === 'string') {
               dbContent = fileContent;
-            } else if (isBlob && !storageUrl && (fileContent as Blob).size <= 20 * 1024 * 1024) {
+            } else if (isBlob && (fileContent as Blob).size <= 50 * 1024 * 1024) {
               try {
                 dbContent = await new Promise<string>((resolve, reject) => {
                   const reader = new FileReader();
@@ -405,10 +384,9 @@ export const useVaultStore = create<VaultStore>()(
             }
 
             try {
-              const dbUrl = storageUrl || localFileUrl;
               const { data, error } = await supabase.from('files').insert([{
                 name: fileData.name, size: fileData.size, type: fileData.type,
-                url: dbUrl, content: dbContent,
+                url: localFileUrl, content: dbContent,
                 folder_id: fileData.folderId, category: fileData.category,
                 tags: fileData.tags, is_starred: fileData.isStarred, is_archived: fileData.isArchived,
                 expiry_date: fileData.expiryDate || null, user_id: userId,
@@ -429,7 +407,7 @@ export const useVaultStore = create<VaultStore>()(
                 // prevent remote deletions from propagating to this device.
                 set((state) => ({
                   files: state.files.map(f => f.id === localId
-                    ? { ...f, id: data.id, ...(storageUrl ? { url: storageUrl } : {}) }
+                    ? { ...f, id: data.id }
                     : f
                   )
                 }));

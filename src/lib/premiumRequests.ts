@@ -261,6 +261,18 @@ export const deleteTxScreenshot = async (id: string): Promise<void> => {
   }
 };
 
+export const deleteTxScreenshotByEmail = async (email: string): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('payment_screenshots')
+      .delete()
+      .eq('user_email', email.toLowerCase());
+    if (error) console.warn('[payment_screenshots] delete by email failed:', error.message);
+  } catch (e) {
+    console.warn('[payment_screenshots] delete by email error:', e);
+  }
+};
+
 // ── Cloud User Registry ───────────────────────────────────────────────────────
 // Every user is upserted into user_profiles on signup / signin so the admin
 // panel can see all registered users across all devices in real time.

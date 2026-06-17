@@ -350,7 +350,7 @@ export const Landing: React.FC = () => {
               {[
                 { title: 'Personal Password Lock', desc: 'Your specific login password acts as the only key that can unlock your saved data.' },
                 { title: 'Emergency Access', desc: 'You can choose trusted family members to securely receive your files if you are ever unavailable.' },
-                { title: 'Connect Your Supabase', desc: 'Store all files directly in your personal cloud database for ultimate ownership.' },
+                { title: 'Automatic Cloud Sync', desc: 'Everything syncs instantly across all your devices — sign in on any device to access your vault.' },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <div className="mt-1 w-5 h-5 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-400 flex-shrink-0">
@@ -467,7 +467,7 @@ export const Landing: React.FC = () => {
               onClick={() => navigate('/auth')}
               className="w-full sm:w-auto px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition-all shadow-lg glow-blue"
             >
-              Connect Your Supabase
+              Sign In to Your Vault
             </button>
           </div>
           <p className="text-[11px] text-gray-500">
